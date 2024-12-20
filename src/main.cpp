@@ -1,4 +1,5 @@
 #include <array>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -175,7 +176,8 @@ std::tuple<vk::UniqueSwapchainKHR, std::vector<vk::Image>,
            std::vector<vk::UniqueImageView>, vk::SurfaceFormatKHR, vk::Extent2D>
 createSwapchain(vk::SurfaceKHR surface, GLFWwindow *window,
                 vk::PhysicalDevice physicalDevice, vk::Device device,
-                std::span<QueueIndex> queueFamilies) {
+                std::span<QueueIndex> queueFamilies,
+                std::optional<vk::SwapchainKHR> oldSwapchain = {}) {
 
   auto capabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
   auto formats = physicalDevice.getSurfaceFormatsKHR(surface);
@@ -218,7 +220,8 @@ createSwapchain(vk::SurfaceKHR surface, GLFWwindow *window,
           .setImageSharingMode(sharingMode)
           .setQueueFamilyIndices(queueFamilies)
           .setPresentMode(presentMode)
-          .setClipped(true));
+          .setClipped(true)
+          .setOldSwapchain(oldSwapchain.value_or(nullptr)));
   auto images = device.getSwapchainImagesKHR(*swapchain);
   auto imageViews = images | views::transform([&](vk::Image image) {
                       return device.createImageViewUnique(
@@ -269,6 +272,54 @@ vk::UniqueRenderPass createRenderPass(vk::Device device,
   });
   return device.createRenderPassUnique(vk::RenderPassCreateInfo{
       {}, attachments, subpasses, subpassDependencies});
+}
+
+struct RenderContext {
+  vk::UniqueSwapchainKHR swapchain;
+  vk::Extent2D extent;
+  vk::SurfaceFormatKHR format;
+  std::vector<vk::Image> images;
+  std::vector<vk::UniqueImageView> imageViews;
+  vk::UniqueRenderPass renderPass;
+  std::vector<vk::UniqueFramebuffer> framebuffers;
+  std::vector<vk::CommandBuffer> commandBuffers;
+
+  inline size_t imageCount() const { return images.size(); }
+};
+
+RenderContext
+createRenderContext(vk::SurfaceKHR surface, GLFWwindow *window,
+                    vk::PhysicalDevice physicalDevice, vk::Device device,
+                    std::span<QueueIndex> queueFamilies,
+                    vk::CommandPool commandPool,
+                    std::optional<vk::SwapchainKHR> oldSwapchain = {}) {
+  auto [swapchain, swapchainImages, swapchainImageViews, swapchainFormat,
+        swapchainExtent] = createSwapchain(surface, window, physicalDevice,
+                                           device, queueFamilies, oldSwapchain);
+  auto renderPass = createRenderPass(device, swapchainFormat.format);
+  auto framebuffers = swapchainImageViews |
+                      views::transform([&](const vk::UniqueImageView &view) {
+                        return device.createFramebufferUnique(
+                            vk::FramebufferCreateInfo{}
+                                .setRenderPass(*renderPass)
+                                .setAttachments(*view)
+                                .setWidth(swapchainExtent.width)
+                                .setHeight(swapchainExtent.height)
+                                .setLayers(1));
+                      }) |
+                      std::ranges::to<std::vector>();
+  auto commandBuffers = device.allocateCommandBuffers(
+      vk::CommandBufferAllocateInfo{}
+          .setCommandPool(commandPool)
+          .setCommandBufferCount((uint32_t)framebuffers.size()));
+  return {.swapchain = std::move(swapchain),
+          .extent = swapchainExtent,
+          .format = swapchainFormat,
+          .images = swapchainImages,
+          .imageViews = std::move(swapchainImageViews),
+          .renderPass = std::move(renderPass),
+          .framebuffers = std::move(framebuffers),
+          .commandBuffers = commandBuffers};
 }
 
 vk::UniqueShaderModule loadShaderFromPath(const std::string_view path,
@@ -458,6 +509,15 @@ bool render(
   }
 }
 
+void waitForValidWindowDimensions(GLFWwindow *window) {
+  int width = 0, height = 0;
+  glfwGetFramebufferSize(window, &width, &height);
+  while (width == 0 || height == 0) {
+    glfwWaitEvents();
+    glfwGetFramebufferSize(window, &width, &height);
+  }
+}
+
 int main(void) {
   auto window = createWindow();
   auto instance = createInstance();
@@ -478,10 +538,6 @@ int main(void) {
   auto workCommandPool =
       device->createCommandPoolUnique(vk::CommandPoolCreateInfo{
           vk::CommandPoolCreateFlagBits::eTransient, queueFamilies[0]});
-  auto [swapchain, swapchainImages, swapchainImageViews, swapchainFormat,
-        swapchainExtent] =
-      createSwapchain(*surface, window.get(), physicalDevice, *device,
-                      std::span{queueFamilies.data(), queueFamilyCount});
   std::array<vk::UniqueFence, kMaxConcurrentFrames> frameFences;
   std::array<vk::UniqueSemaphore, kMaxConcurrentFrames> readyImageSemaphores;
   std::array<vk::UniqueSemaphore, kMaxConcurrentFrames> doneImageSemaphores;
@@ -495,20 +551,11 @@ int main(void) {
   std::ranges::generate(doneImageSemaphores, [&device]() {
     return device->createSemaphoreUnique({});
   });
-  auto renderPass = createRenderPass(*device, swapchainFormat.format);
-  auto framebuffers = swapchainImageViews |
-                      views::transform([&](const vk::UniqueImageView &view) {
-                        return device->createFramebufferUnique(
-                            vk::FramebufferCreateInfo{}
-                                .setRenderPass(*renderPass)
-                                .setAttachments(*view)
-                                .setWidth(swapchainExtent.width)
-                                .setHeight(swapchainExtent.height)
-                                .setLayers(1));
-                      }) |
-                      std::ranges::to<std::vector>();
-  auto [pipeline, pipelineLayout, shaderModules] =
-      createWhiteGraphicsPipeline(swapchainExtent, *renderPass, *device);
+  auto renderContext = createRenderContext(
+      *surface, window.get(), physicalDevice, *device,
+      std::span{queueFamilies.data(), queueFamilyCount}, *renderCommandPool);
+  auto [pipeline, pipelineLayout, shaderModules] = createWhiteGraphicsPipeline(
+      renderContext.extent, *renderContext.renderPass, *device);
 
   // Load vertex buffer
   auto vertices = std::to_array({glm::vec4(-1.0, 1.0, 0.0, 1.0),
@@ -519,25 +566,30 @@ int main(void) {
                             *workCommandPool, workQueue, *device, *allocator);
 
   // Record command buffers.
-  auto renderCommandBuffers = device->allocateCommandBuffers(
-      vk::CommandBufferAllocateInfo{}
-          .setCommandPool(*renderCommandPool)
-          .setCommandBufferCount((uint32_t)framebuffers.size()));
   for (auto [commandBuffer, framebuffer] :
-       views::zip(renderCommandBuffers, framebuffers)) {
-    recordRenderCommandBuffer(commandBuffer, swapchainExtent, *renderPass,
-                              *pipeline, *vertexBuffer, vertices.size(),
-                              *framebuffer);
+       views::zip(renderContext.commandBuffers, renderContext.framebuffers)) {
+    recordRenderCommandBuffer(commandBuffer, renderContext.extent,
+                              *renderContext.renderPass, *pipeline,
+                              *vertexBuffer, vertices.size(), *framebuffer);
   }
 
   // Game loop
   uint32_t currentFrame = 0;
   std::vector<vk::Fence> imageFences;
-  imageFences.resize(framebuffers.size());
+  imageFences.resize(renderContext.imageCount());
   while (!glfwWindowShouldClose(window.get())) {
-    render(currentFrame, renderCommandBuffers, frameFences,
-           readyImageSemaphores, doneImageSemaphores, imageFences, *device,
-           graphicsQueue, presentQueue, *swapchain);
+    bool needsSwapchainRecreation =
+        render(currentFrame, renderContext.commandBuffers, frameFences,
+               readyImageSemaphores, doneImageSemaphores, imageFences, *device,
+               graphicsQueue, presentQueue, *renderContext.swapchain);
+    if (needsSwapchainRecreation) {
+      waitForValidWindowDimensions(window.get());
+      device->waitIdle();
+      renderContext =
+          createRenderContext(*surface, window.get(), physicalDevice, *device,
+                              {queueFamilies.data(), queueFamilyCount},
+                              *renderCommandPool, *renderContext.swapchain);
+    }
     currentFrame++;
     glfwPollEvents();
   }
