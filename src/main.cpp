@@ -16,12 +16,13 @@
 #include <GLFW/glfw3.h>
 
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wconversion"
 #pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wnullability-extension"
+#pragma GCC diagnostic ignored "-Wnullability-completeness"
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.hpp"
 #pragma GCC diagnostic pop
