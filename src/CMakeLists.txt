@@ -1,6 +1,6 @@
-file(GLOB SOURCES *.cpp)
-
-add_executable(engine ${SOURCES})
+add_executable(engine 
+  "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
+)
 
 target_compile_options(engine PRIVATE
      $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:
