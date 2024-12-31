@@ -18,5 +18,3 @@ void Window::waitForValidDimensions() const {
     glfwGetFramebufferSize(glfwWindow(), &width, &height);
   }
 }
-
-GLFWwindow *Window::glfwWindow() const { return _glfwWindow.get(); }

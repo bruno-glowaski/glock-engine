@@ -13,7 +13,7 @@ struct Window {
   bool shouldClose() const;
   void waitForValidDimensions() const;
 
-  GLFWwindow *glfwWindow() const;
+  inline GLFWwindow *glfwWindow() const { return _glfwWindow.get(); }
 
 private:
   struct GLFWWindowDestroyer {
