@@ -1,23 +1,19 @@
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
-#include <memory>
 #include <print>
 #include <ranges>
 #include <stdexcept>
+#include <string_view>
 #include <tuple>
 #include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_handles.hpp>
-#include <vulkan/vulkan_structs.hpp>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -32,6 +28,8 @@
 #include "vk_mem_alloc.hpp"
 #pragma GCC diagnostic pop
 
+#include "window.hpp"
+
 namespace views = std::ranges::views;
 
 using QueueIndex = uint32_t;
@@ -45,20 +43,6 @@ const auto kVkLayers = std::to_array({"VK_LAYER_KHRONOS_validation"});
 const auto kVkDeviceExtensions = std::to_array({vk::KHRSwapchainExtensionName});
 const auto kVertShaderPath = "./assets/shaders/white.vert.spv";
 const auto kFragShaderPath = "./assets/shaders/white.frag.spv";
-
-struct GLFWWindowDestroyer {
-  void operator()(GLFWwindow *ptr) {
-    glfwDestroyWindow(ptr);
-    glfwTerminate();
-  }
-};
-using UniqueWindow = std::unique_ptr<GLFWwindow, GLFWWindowDestroyer>;
-
-UniqueWindow createWindow() {
-  return UniqueWindow{
-      (glfwInit(), glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API),
-       glfwCreateWindow(640, 480, "Glock Engine", nullptr, nullptr))};
-}
 
 vk::UniqueInstance createInstance() {
   uint32_t vkInstanceExtensionCount;
@@ -509,19 +493,10 @@ bool render(
   }
 }
 
-void waitForValidWindowDimensions(GLFWwindow *window) {
-  int width = 0, height = 0;
-  glfwGetFramebufferSize(window, &width, &height);
-  while (width == 0 || height == 0) {
-    glfwWaitEvents();
-    glfwGetFramebufferSize(window, &width, &height);
-  }
-}
-
 int main(void) {
-  auto window = createWindow();
+  auto window = Window::create("Glock Engine", 640, 480);
   auto instance = createInstance();
-  auto surface = createSurface(*instance, window.get());
+  auto surface = createSurface(*instance, window.glfwWindow());
   auto [physicalDevice, queueFamilies, queueFamilyCount] =
       autoselectPhysicalDevice(*instance, *surface);
   auto [device, graphicsQueue, presentQueue] =
@@ -552,7 +527,7 @@ int main(void) {
     return device->createSemaphoreUnique({});
   });
   auto renderContext = createRenderContext(
-      *surface, window.get(), physicalDevice, *device,
+      *surface, window.glfwWindow(), physicalDevice, *device,
       std::span{queueFamilies.data(), queueFamilyCount}, *renderCommandPool);
   auto [pipeline, pipelineLayout, shaderModules] = createWhiteGraphicsPipeline(
       renderContext.extent, *renderContext.renderPass, *device);
@@ -577,17 +552,17 @@ int main(void) {
   uint32_t currentFrame = 0;
   std::vector<vk::Fence> imageFences;
   imageFences.resize(renderContext.imageCount());
-  while (!glfwWindowShouldClose(window.get())) {
+  while (!window.shouldClose()) {
     bool needsSwapchainRecreation =
         render(currentFrame, renderContext.commandBuffers, frameFences,
                readyImageSemaphores, doneImageSemaphores, imageFences, *device,
                graphicsQueue, presentQueue, *renderContext.swapchain);
     if (needsSwapchainRecreation) {
-      waitForValidWindowDimensions(window.get());
+      window.waitForValidDimensions();
       device->waitIdle();
       renderContext =
-          createRenderContext(*surface, window.get(), physicalDevice, *device,
-                              {queueFamilies.data(), queueFamilyCount},
+          createRenderContext(*surface, window.glfwWindow(), physicalDevice,
+                              *device, {queueFamilies.data(), queueFamilyCount},
                               *renderCommandPool, *renderContext.swapchain);
     }
     currentFrame++;

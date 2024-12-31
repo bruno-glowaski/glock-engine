@@ -1,5 +1,6 @@
 add_executable(engine 
   "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/window.cpp"
 )
 
 target_compile_options(engine PRIVATE
