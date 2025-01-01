@@ -8,6 +8,9 @@
 #include <stdexcept>
 #include <string_view>
 #include <tuple>
+
+namespace views = std::ranges::views;
+
 #include <vulkan/vulkan.hpp>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -15,152 +18,18 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wconversion"
-#pragma GCC diagnostic ignored "-Wsign-conversion"
-#pragma GCC diagnostic ignored "-Wnullability-extension"
-#pragma GCC diagnostic ignored "-Wnullability-completeness"
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#define VMA_IMPLEMENTATION
-#include "vk_mem_alloc.hpp"
-#pragma GCC diagnostic pop
-
+#include "graphics_device.hpp"
 #include "window.hpp"
 
-namespace views = std::ranges::views;
-
-using QueueIndex = uint32_t;
-
 const size_t kMaxConcurrentFrames = 2;
-const vk::ApplicationInfo kApplicationInfo = {
-    "Glock Engine",           VK_MAKE_VERSION(0, 1, 0), "Glock Engine",
-    VK_MAKE_VERSION(0, 1, 0), vk::ApiVersion13,
-};
-const auto kVkLayers = std::to_array({"VK_LAYER_KHRONOS_validation"});
-const auto kVkDeviceExtensions = std::to_array({vk::KHRSwapchainExtensionName});
 const auto kVertShaderPath = "./assets/shaders/white.vert.spv";
 const auto kFragShaderPath = "./assets/shaders/white.frag.spv";
-
-vk::UniqueInstance createInstance() {
-  uint32_t vkInstanceExtensionCount;
-  const char **vkInstanceExtensions =
-      glfwGetRequiredInstanceExtensions(&vkInstanceExtensionCount);
-  return vk::createInstanceUnique(vk::InstanceCreateInfo{
-      {},
-      &kApplicationInfo,
-      kVkLayers.size(),
-      kVkLayers.data(),
-      vkInstanceExtensionCount,
-      vkInstanceExtensions,
-  });
-}
-
-vk::UniqueSurfaceKHR createSurface(const vk::Instance instance,
-                                   GLFWwindow *window) {
-  VkSurfaceKHR rawSurface;
-  VkResult rawResult =
-      glfwCreateWindowSurface(instance, window, nullptr, &rawSurface);
-  if (rawResult != static_cast<VkResult>(vk::Result::eSuccess)) {
-    throw std::runtime_error(
-        std::format("failed to create window. Result code: {}",
-                    static_cast<int>(rawResult)));
-  }
-  vk::ObjectDestroy<vk::Instance, vk::DispatchLoaderStatic> deleter(instance);
-  return vk::UniqueSurfaceKHR{rawSurface, deleter};
-}
-
-std::tuple<vk::PhysicalDevice, std::array<QueueIndex, 2>, uint32_t>
-autoselectPhysicalDevice(const vk::Instance instance,
-                         const vk::SurfaceKHR surface) {
-  std::optional<vk::PhysicalDevice> selectedDevice;
-  std::array<uint32_t, 2> queueFamilies;
-  uint32_t queueFamilyCount;
-  auto physicalDevices = instance.enumeratePhysicalDevices();
-  std::println("Available devices:");
-  for (auto [i, device] : physicalDevices | views::enumerate) {
-    // 1. Needs a Graphics queue and a Present queue;
-    // 2. Needs to support all required device extensions
-    auto properties = device.getProperties();
-    auto extensions = device.enumerateDeviceExtensionProperties();
-    auto allQueueFamilies = device.getQueueFamilyProperties();
-
-    std::println("{}. {} [{}:{}]", i, properties.deviceName.data(),
-                 properties.vendorID, properties.deviceID);
-    std::println("- Extensions:");
-    for (auto extension : extensions) {
-      std::println("  - {}", extension.extensionName.data());
-    }
-
-    std::optional<uint32_t> graphicsQueue, presentQueue;
-    for (auto [i, queueFamily] : allQueueFamilies | views::enumerate) {
-      auto index = (uint32_t)i;
-      if (!graphicsQueue.has_value() &&
-          queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
-        graphicsQueue = index;
-      }
-
-      if ((!presentQueue.has_value() || presentQueue == graphicsQueue) &&
-          device.getSurfaceSupportKHR(index, surface)) {
-        presentQueue = index;
-      }
-      if (graphicsQueue.has_value() && presentQueue.has_value()) {
-        break;
-      }
-    }
-    if (!graphicsQueue.has_value() || !presentQueue.has_value()) {
-      continue;
-    }
-
-    if (!std::ranges::contains_subrange(
-            extensions | std::ranges::views::transform([](auto extension) {
-              return std::string_view{extension.extensionName};
-            }),
-            kVkDeviceExtensions |
-                std::ranges::views::transform([](auto extensionName) {
-                  return std::string_view{extensionName};
-                }))) {
-      continue;
-    };
-
-    selectedDevice = device;
-    queueFamilies = {*graphicsQueue, *presentQueue};
-    queueFamilyCount = graphicsQueue == presentQueue ? 1 : 2;
-    break;
-  }
-  if (!selectedDevice.has_value()) {
-    throw std::runtime_error(std::format("no suitable Vulkan device found"));
-  }
-  return std::make_tuple(*selectedDevice, queueFamilies, queueFamilyCount);
-}
-
-std::tuple<vk::UniqueDevice, vk::Queue, vk::Queue>
-createDevice(vk::PhysicalDevice physicalDevice,
-             std::array<QueueIndex, 2> queueFamilies,
-             uint32_t queueFamilyCount) {
-  float queuePriority = 0.0f;
-  auto queueInfos = std::to_array({
-      vk::DeviceQueueCreateInfo({}, queueFamilies[0], 1, &queuePriority),
-      vk::DeviceQueueCreateInfo({}, queueFamilies[1], 1, &queuePriority),
-  });
-  auto device = physicalDevice.createDeviceUnique(
-      vk::DeviceCreateInfo{}
-          .setPQueueCreateInfos(queueInfos.data())
-          .setQueueCreateInfoCount(queueFamilyCount)
-          .setPEnabledLayerNames(kVkLayers)
-          .setPEnabledExtensionNames(kVkDeviceExtensions));
-  auto graphicsQueue = device->getQueue(queueFamilies[0], 0);
-  auto presentQueue = device->getQueue(queueFamilies[1], 0);
-  return std::make_tuple(std::move(device), graphicsQueue, presentQueue);
-}
 
 std::tuple<vk::UniqueSwapchainKHR, std::vector<vk::Image>,
            std::vector<vk::UniqueImageView>, vk::SurfaceFormatKHR, vk::Extent2D>
 createSwapchain(vk::SurfaceKHR surface, GLFWwindow *window,
                 vk::PhysicalDevice physicalDevice, vk::Device device,
-                std::span<QueueIndex> queueFamilies,
+                std::span<const QueueIndex> queueFamilies,
                 std::optional<vk::SwapchainKHR> oldSwapchain = {}) {
 
   auto capabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
@@ -274,7 +143,7 @@ struct RenderContext {
 RenderContext
 createRenderContext(vk::SurfaceKHR surface, GLFWwindow *window,
                     vk::PhysicalDevice physicalDevice, vk::Device device,
-                    std::span<QueueIndex> queueFamilies,
+                    std::span<const QueueIndex> queueFamilies,
                     vk::CommandPool commandPool,
                     std::optional<vk::SwapchainKHR> oldSwapchain = {}) {
   auto [swapchain, swapchainImages, swapchainImageViews, swapchainFormat,
@@ -488,57 +357,46 @@ bool render(
   try {
     auto result = presentQueue.presentKHR(presentInfo);
     return result != vk::Result::eSuccess;
-  } catch (vk::OutOfDateKHRError) {
+  } catch (vk::OutOfDateKHRError &) {
     return true;
   }
 }
 
 int main(void) {
   auto window = Window::create("Glock Engine", 640, 480);
-  auto instance = createInstance();
-  auto surface = createSurface(*instance, window.glfwWindow());
-  auto [physicalDevice, queueFamilies, queueFamilyCount] =
-      autoselectPhysicalDevice(*instance, *surface);
-  auto [device, graphicsQueue, presentQueue] =
-      createDevice(physicalDevice, queueFamilies, queueFamilyCount);
-  auto workQueue = graphicsQueue;
-  auto allocator =
-      vma::createAllocatorUnique(vma::AllocatorCreateInfo{}
-                                     .setDevice(*device)
-                                     .setVulkanApiVersion(vk::ApiVersion13)
-                                     .setPhysicalDevice(physicalDevice)
-                                     .setInstance(*instance));
-  auto renderCommandPool = device->createCommandPoolUnique(
-      vk::CommandPoolCreateInfo{{}, queueFamilies[0]});
+  auto device =
+      GraphicsDevice::createFor(window, "Glock Engine", MAKE_VERSION(0, 1, 0));
   auto workCommandPool =
-      device->createCommandPoolUnique(vk::CommandPoolCreateInfo{
-          vk::CommandPoolCreateFlagBits::eTransient, queueFamilies[0]});
+      device.vkDevice().createCommandPoolUnique(vk::CommandPoolCreateInfo{
+          vk::CommandPoolCreateFlagBits::eTransient, device.workQueueIndex()});
+  auto renderCommandPool = device.vkDevice().createCommandPoolUnique(
+      vk::CommandPoolCreateInfo{{}, device.graphicsQueueIndex()});
   std::array<vk::UniqueFence, kMaxConcurrentFrames> frameFences;
   std::array<vk::UniqueSemaphore, kMaxConcurrentFrames> readyImageSemaphores;
   std::array<vk::UniqueSemaphore, kMaxConcurrentFrames> doneImageSemaphores;
   std::ranges::generate(frameFences, [&device]() {
-    return device->createFenceUnique(
+    return device.vkDevice().createFenceUnique(
         vk::FenceCreateInfo{}.setFlags(vk::FenceCreateFlagBits::eSignaled));
   });
   std::ranges::generate(readyImageSemaphores, [&device]() {
-    return device->createSemaphoreUnique({});
+    return device.vkDevice().createSemaphoreUnique({});
   });
   std::ranges::generate(doneImageSemaphores, [&device]() {
-    return device->createSemaphoreUnique({});
+    return device.vkDevice().createSemaphoreUnique({});
   });
   auto renderContext = createRenderContext(
-      *surface, window.glfwWindow(), physicalDevice, *device,
-      std::span{queueFamilies.data(), queueFamilyCount}, *renderCommandPool);
+      device.vkSurface(), window.glfwWindow(), device.vkPhysicalDevice(),
+      device.vkDevice(), device.queueFamilies(), *renderCommandPool);
   auto [pipeline, pipelineLayout, shaderModules] = createWhiteGraphicsPipeline(
-      renderContext.extent, *renderContext.renderPass, *device);
+      renderContext.extent, *renderContext.renderPass, device.vkDevice());
 
   // Load vertex buffer
   auto vertices = std::to_array({glm::vec4(-1.0, 1.0, 0.0, 1.0),
                                  glm::vec4(1.0, 1.0, 0.0, 1.0),
                                  glm::vec4(0.0, -1.0, 0.0, 1.0)});
-  auto [vertexBuffer, vertexBufferAllocation] =
-      createImmutableBuffer(vertices, vk::BufferUsageFlagBits::eVertexBuffer,
-                            *workCommandPool, workQueue, *device, *allocator);
+  auto [vertexBuffer, vertexBufferAllocation] = createImmutableBuffer(
+      vertices, vk::BufferUsageFlagBits::eVertexBuffer, *workCommandPool,
+      device.workQueue(), device.vkDevice(), device.vmaAllocator());
 
   // Record command buffers.
   for (auto [commandBuffer, framebuffer] :
@@ -555,19 +413,20 @@ int main(void) {
   while (!window.shouldClose()) {
     bool needsSwapchainRecreation =
         render(currentFrame, renderContext.commandBuffers, frameFences,
-               readyImageSemaphores, doneImageSemaphores, imageFences, *device,
-               graphicsQueue, presentQueue, *renderContext.swapchain);
+               readyImageSemaphores, doneImageSemaphores, imageFences,
+               device.vkDevice(), device.graphicsQueue(), device.presentQueue(),
+               *renderContext.swapchain);
     if (needsSwapchainRecreation) {
       window.waitForValidDimensions();
-      device->waitIdle();
-      renderContext =
-          createRenderContext(*surface, window.glfwWindow(), physicalDevice,
-                              *device, {queueFamilies.data(), queueFamilyCount},
-                              *renderCommandPool, *renderContext.swapchain);
+      device.waitIdle();
+      renderContext = createRenderContext(
+          device.vkSurface(), window.glfwWindow(), device.vkPhysicalDevice(),
+          device.vkDevice(), device.queueFamilies(), *renderCommandPool,
+          *renderContext.swapchain);
     }
     currentFrame++;
     glfwPollEvents();
   }
-  device->waitIdle();
+  device.waitIdle();
   return 0;
 }
