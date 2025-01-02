@@ -19,81 +19,12 @@ namespace views = std::ranges::views;
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "graphics_device.hpp"
+#include "swapchain.hpp"
 #include "window.hpp"
 
 const size_t kMaxConcurrentFrames = 2;
 const auto kVertShaderPath = "./assets/shaders/white.vert.spv";
 const auto kFragShaderPath = "./assets/shaders/white.frag.spv";
-
-std::tuple<vk::UniqueSwapchainKHR, std::vector<vk::Image>,
-           std::vector<vk::UniqueImageView>, vk::SurfaceFormatKHR, vk::Extent2D>
-createSwapchain(vk::SurfaceKHR surface, GLFWwindow *window,
-                vk::PhysicalDevice physicalDevice, vk::Device device,
-                std::span<const QueueIndex> queueFamilies,
-                std::optional<vk::SwapchainKHR> oldSwapchain = {}) {
-
-  auto capabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
-  auto formats = physicalDevice.getSurfaceFormatsKHR(surface);
-  auto presentModes = physicalDevice.getSurfacePresentModesKHR(surface);
-
-  auto minImageCount =
-      std::max(capabilities.minImageCount + 1, capabilities.maxImageCount);
-  auto format = std::ranges::find_if(formats, [](vk::SurfaceFormatKHR format) {
-    return format.format == vk::Format::eB8G8R8A8Srgb &&
-           format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
-  });
-  if (format == formats.end()) {
-    format = formats.begin();
-  }
-  auto presentMode =
-      std::ranges::contains(presentModes, vk::PresentModeKHR::eMailbox)
-          ? vk::PresentModeKHR::eMailbox
-          : vk::PresentModeKHR::eFifo;
-
-  int glfwWindowWidth;
-  int glfwWindowHeight;
-  glfwGetFramebufferSize(window, &glfwWindowWidth, &glfwWindowHeight);
-  vk::Extent2D extent{
-      std::clamp((uint32_t)glfwWindowWidth, capabilities.minImageExtent.width,
-                 capabilities.maxImageExtent.width),
-      std::clamp((uint32_t)glfwWindowHeight, capabilities.minImageExtent.height,
-                 capabilities.maxImageExtent.height)};
-
-  auto sharingMode = queueFamilies.size() == 1 ? vk::SharingMode::eExclusive
-                                               : vk::SharingMode::eConcurrent;
-  auto swapchain = device.createSwapchainKHRUnique(
-      vk::SwapchainCreateInfoKHR{}
-          .setSurface(surface)
-          .setMinImageCount(minImageCount)
-          .setImageFormat(format->format)
-          .setImageColorSpace(format->colorSpace)
-          .setImageExtent(extent)
-          .setImageArrayLayers(1)
-          .setImageUsage(vk::ImageUsageFlagBits::eColorAttachment)
-          .setImageSharingMode(sharingMode)
-          .setQueueFamilyIndices(queueFamilies)
-          .setPresentMode(presentMode)
-          .setClipped(true)
-          .setOldSwapchain(oldSwapchain.value_or(nullptr)));
-  auto images = device.getSwapchainImagesKHR(*swapchain);
-  auto imageViews = images | views::transform([&](vk::Image image) {
-                      return device.createImageViewUnique(
-                          vk::ImageViewCreateInfo{}
-                              .setImage(image)
-                              .setViewType(vk::ImageViewType::e2D)
-                              .setFormat(format->format)
-                              .setSubresourceRange(vk::ImageSubresourceRange{
-                                  vk::ImageAspectFlagBits::eColor,
-                                  0,
-                                  1,
-                                  0,
-                                  1,
-                              }));
-                    }) |
-                    std::ranges::to<std::vector<vk::UniqueImageView>>();
-  return std::make_tuple(std::move(swapchain), images, std::move(imageViews),
-                         *format, extent);
-}
 
 vk::UniqueRenderPass createRenderPass(vk::Device device,
                                       vk::Format swapchainFormat) {
@@ -128,48 +59,38 @@ vk::UniqueRenderPass createRenderPass(vk::Device device,
 }
 
 struct RenderContext {
-  vk::UniqueSwapchainKHR swapchain;
-  vk::Extent2D extent;
-  vk::SurfaceFormatKHR format;
-  std::vector<vk::Image> images;
-  std::vector<vk::UniqueImageView> imageViews;
+  Swapchain swapchain;
   vk::UniqueRenderPass renderPass;
   std::vector<vk::UniqueFramebuffer> framebuffers;
   std::vector<vk::CommandBuffer> commandBuffers;
 
-  inline size_t imageCount() const { return images.size(); }
+  inline size_t imageCount() const { return swapchain.imageCount(); }
+  inline vk::Extent2D extent() const { return swapchain.extent(); }
+  inline bool needsRecreation() const { return swapchain.needsRecreation(); }
 };
 
-RenderContext
-createRenderContext(vk::SurfaceKHR surface, GLFWwindow *window,
-                    vk::PhysicalDevice physicalDevice, vk::Device device,
-                    std::span<const QueueIndex> queueFamilies,
-                    vk::CommandPool commandPool,
-                    std::optional<vk::SwapchainKHR> oldSwapchain = {}) {
-  auto [swapchain, swapchainImages, swapchainImageViews, swapchainFormat,
-        swapchainExtent] = createSwapchain(surface, window, physicalDevice,
-                                           device, queueFamilies, oldSwapchain);
-  auto renderPass = createRenderPass(device, swapchainFormat.format);
-  auto framebuffers = swapchainImageViews |
-                      views::transform([&](const vk::UniqueImageView &view) {
-                        return device.createFramebufferUnique(
+RenderContext createRenderContext(const Window &window,
+                                  const GraphicsDevice &device,
+                                  vk::CommandPool commandPool,
+                                  std::optional<Swapchain> oldSwapchain = {}) {
+  auto swapchain = Swapchain::create(window, device, std::move(oldSwapchain));
+  auto renderPass = createRenderPass(device.vkDevice(), swapchain.format());
+  auto framebuffers = swapchain.images() |
+                      views::transform([&](vk::ImageView view) {
+                        return device.vkDevice().createFramebufferUnique(
                             vk::FramebufferCreateInfo{}
                                 .setRenderPass(*renderPass)
-                                .setAttachments(*view)
-                                .setWidth(swapchainExtent.width)
-                                .setHeight(swapchainExtent.height)
+                                .setAttachments(view)
+                                .setWidth(swapchain.extent().width)
+                                .setHeight(swapchain.extent().height)
                                 .setLayers(1));
                       }) |
                       std::ranges::to<std::vector>();
-  auto commandBuffers = device.allocateCommandBuffers(
+  auto commandBuffers = device.vkDevice().allocateCommandBuffers(
       vk::CommandBufferAllocateInfo{}
           .setCommandPool(commandPool)
           .setCommandBufferCount((uint32_t)framebuffers.size()));
   return {.swapchain = std::move(swapchain),
-          .extent = swapchainExtent,
-          .format = swapchainFormat,
-          .images = swapchainImages,
-          .imageViews = std::move(swapchainImageViews),
           .renderPass = std::move(renderPass),
           .framebuffers = std::move(framebuffers),
           .commandBuffers = commandBuffers};
@@ -315,33 +236,32 @@ void recordRenderCommandBuffer(vk::CommandBuffer commandBuffer,
   commandBuffer.end();
 }
 
-bool render(
+void render(
     uint32_t frame, std::span<vk::CommandBuffer> commandBuffers,
     std::span<vk::UniqueFence, kMaxConcurrentFrames> frameFences,
     std::span<vk::UniqueSemaphore, kMaxConcurrentFrames> readyImageSemaphores,
     std::span<vk::UniqueSemaphore, kMaxConcurrentFrames> doneImageSemaphores,
     std::span<vk::Fence> imageFences, vk::Device device,
-    vk::Queue graphicsQueue, vk::Queue presentQueue,
-    vk::SwapchainKHR swapchain) {
+    vk::Queue graphicsQueue, Swapchain &swapchain) {
   auto renderFrame = frame % kMaxConcurrentFrames;
   auto frameFence = *frameFences[renderFrame];
   auto readyImageSemaphore = *readyImageSemaphores[renderFrame];
   auto doneImageSemaphore = *doneImageSemaphores[renderFrame];
   std::ignore = device.waitForFences(frameFence, true,
                                      std::numeric_limits<uint64_t>::max());
-  uint32_t imageIndex =
-      device
-          .acquireNextImageKHR(swapchain, std::numeric_limits<uint64_t>::max(),
-                               readyImageSemaphore)
-          .value;
-  auto &imageFence = imageFences[imageIndex];
+  std::optional<ImageIndex> imageIndex =
+      swapchain.nextImage(readyImageSemaphore);
+  if (!imageIndex.has_value()) {
+    return;
+  }
+  auto &imageFence = imageFences[*imageIndex];
   if (imageFence != nullptr) {
     std::ignore = device.waitForFences(imageFence, true,
                                        std::numeric_limits<uint64_t>::max());
   }
   imageFence = frameFence;
   device.resetFences(frameFence);
-  auto commandBuffer = commandBuffers[imageIndex];
+  auto commandBuffer = commandBuffers[*imageIndex];
   vk::PipelineStageFlags waitStage =
       vk::PipelineStageFlagBits::eColorAttachmentOutput;
   auto submitInfo = vk::SubmitInfo{}
@@ -350,16 +270,7 @@ bool render(
                         .setCommandBuffers(commandBuffer)
                         .setSignalSemaphores(doneImageSemaphore);
   graphicsQueue.submit(submitInfo, frameFence);
-  auto presentInfo = vk::PresentInfoKHR{}
-                         .setWaitSemaphores(doneImageSemaphore)
-                         .setSwapchains(swapchain)
-                         .setImageIndices(imageIndex);
-  try {
-    auto result = presentQueue.presentKHR(presentInfo);
-    return result != vk::Result::eSuccess;
-  } catch (vk::OutOfDateKHRError &) {
-    return true;
-  }
+  swapchain.present(*imageIndex, doneImageSemaphore);
 }
 
 int main(void) {
@@ -384,11 +295,9 @@ int main(void) {
   std::ranges::generate(doneImageSemaphores, [&device]() {
     return device.vkDevice().createSemaphoreUnique({});
   });
-  auto renderContext = createRenderContext(
-      device.vkSurface(), window.glfwWindow(), device.vkPhysicalDevice(),
-      device.vkDevice(), device.queueFamilies(), *renderCommandPool);
+  auto renderContext = createRenderContext(window, device, *renderCommandPool);
   auto [pipeline, pipelineLayout, shaderModules] = createWhiteGraphicsPipeline(
-      renderContext.extent, *renderContext.renderPass, device.vkDevice());
+      renderContext.extent(), *renderContext.renderPass, device.vkDevice());
 
   // Load vertex buffer
   auto vertices = std::to_array({glm::vec4(-1.0, 1.0, 0.0, 1.0),
@@ -401,7 +310,7 @@ int main(void) {
   // Record command buffers.
   for (auto [commandBuffer, framebuffer] :
        views::zip(renderContext.commandBuffers, renderContext.framebuffers)) {
-    recordRenderCommandBuffer(commandBuffer, renderContext.extent,
+    recordRenderCommandBuffer(commandBuffer, renderContext.extent(),
                               *renderContext.renderPass, *pipeline,
                               *vertexBuffer, vertices.size(), *framebuffer);
   }
@@ -411,18 +320,14 @@ int main(void) {
   std::vector<vk::Fence> imageFences;
   imageFences.resize(renderContext.imageCount());
   while (!window.shouldClose()) {
-    bool needsSwapchainRecreation =
-        render(currentFrame, renderContext.commandBuffers, frameFences,
-               readyImageSemaphores, doneImageSemaphores, imageFences,
-               device.vkDevice(), device.graphicsQueue(), device.presentQueue(),
-               *renderContext.swapchain);
-    if (needsSwapchainRecreation) {
+    render(currentFrame, renderContext.commandBuffers, frameFences,
+           readyImageSemaphores, doneImageSemaphores, imageFences,
+           device.vkDevice(), device.graphicsQueue(), renderContext.swapchain);
+    if (renderContext.needsRecreation()) {
       window.waitForValidDimensions();
       device.waitIdle();
-      renderContext = createRenderContext(
-          device.vkSurface(), window.glfwWindow(), device.vkPhysicalDevice(),
-          device.vkDevice(), device.queueFamilies(), *renderCommandPool,
-          *renderContext.swapchain);
+      renderContext = createRenderContext(window, device, *renderCommandPool,
+                                          std::move(renderContext.swapchain));
     }
     currentFrame++;
     glfwPollEvents();
