@@ -78,29 +78,66 @@ Swapchain Swapchain::create(const Window &window, const GraphicsDevice &device,
                                 }));
                       }) |
                       std::ranges::to<std::vector<vk::UniqueImageView>>();
-  return {
-      vkDevice, device.presentQueue(),  std::move(vkSwapchain), extent, *format,
-      vkImages, std::move(vkImageViews)};
+  std::array<vk::UniqueFence, kMaxConcurrentFrames> frameFences;
+  std::array<vk::UniqueSemaphore, kMaxConcurrentFrames> readyImageSemaphores;
+  std::array<vk::UniqueSemaphore, kMaxConcurrentFrames> doneImageSemaphores;
+  std::ranges::generate(frameFences, [&device]() {
+    return device.vkDevice().createFenceUnique(
+        vk::FenceCreateInfo{}.setFlags(vk::FenceCreateFlagBits::eSignaled));
+  });
+  std::ranges::generate(readyImageSemaphores, [&device]() {
+    return device.vkDevice().createSemaphoreUnique({});
+  });
+  std::ranges::generate(doneImageSemaphores, [&device]() {
+    return device.vkDevice().createSemaphoreUnique({});
+  });
+  std::vector<vk::Fence> imageFences;
+  imageFences.resize(vkImages.size());
+  return {vkDevice,
+          device.presentQueue(),
+          std::move(vkSwapchain),
+          extent,
+          *format,
+          vkImages,
+          std::move(vkImageViews),
+          std::move(readyImageSemaphores),
+          std::move(doneImageSemaphores),
+          std::move(frameFences),
+          std::move(imageFences)};
 }
 
-std::optional<ImageIndex> Swapchain::nextImage(vk::Semaphore readySemaphore) {
+std::optional<Swapchain::Frame> Swapchain::nextImage() {
+  auto readySemaphore = _readySemaphores[_frame].get();
+  auto doneSemaphore = _doneSemaphores[_frame].get();
+  auto frameFence = _frameFences[_frame].get();
+  _frame = (_frame + 1) % kMaxConcurrentFrames;
+  std::ignore = _owner.waitForFences(frameFence, true,
+                                     std::numeric_limits<uint64_t>::max());
   try {
     auto result = _owner.acquireNextImageKHR(
         _vkSwapchain.get(), std::numeric_limits<uint64_t>::max(),
         readySemaphore);
+    auto image = result.value;
+    auto &imageFence = _imageFences[image];
+    if (imageFence != nullptr) {
+      std::ignore = _owner.waitForFences(imageFence, true,
+                                         std::numeric_limits<uint64_t>::max());
+    }
+    imageFence = frameFence;
+    _owner.resetFences(frameFence);
     _needsRecreation = result.result == vk::Result::eSuccess;
-    return result.value;
+    return {{image, readySemaphore, doneSemaphore, frameFence}};
   } catch (vk::OutOfDateKHRError &) {
     _needsRecreation = true;
     return std::nullopt;
   }
 }
 
-void Swapchain::present(ImageIndex imageIndex, vk::Semaphore doneSemaphore) {
+void Swapchain::present(Frame frame) {
   auto presentInfo = vk::PresentInfoKHR{}
-                         .setWaitSemaphores(doneSemaphore)
+                         .setWaitSemaphores(frame.doneSemaphore)
                          .setSwapchains(_vkSwapchain.get())
-                         .setImageIndices(imageIndex);
+                         .setImageIndices(frame.image);
   try {
     auto result = _presentQueue.presentKHR(presentInfo);
     _needsRecreation = result != vk::Result::eSuccess;

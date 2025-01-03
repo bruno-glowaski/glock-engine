@@ -236,41 +236,22 @@ void recordRenderCommandBuffer(vk::CommandBuffer commandBuffer,
   commandBuffer.end();
 }
 
-void render(
-    uint32_t frame, std::span<vk::CommandBuffer> commandBuffers,
-    std::span<vk::UniqueFence, kMaxConcurrentFrames> frameFences,
-    std::span<vk::UniqueSemaphore, kMaxConcurrentFrames> readyImageSemaphores,
-    std::span<vk::UniqueSemaphore, kMaxConcurrentFrames> doneImageSemaphores,
-    std::span<vk::Fence> imageFences, vk::Device device,
-    vk::Queue graphicsQueue, Swapchain &swapchain) {
-  auto renderFrame = frame % kMaxConcurrentFrames;
-  auto frameFence = *frameFences[renderFrame];
-  auto readyImageSemaphore = *readyImageSemaphores[renderFrame];
-  auto doneImageSemaphore = *doneImageSemaphores[renderFrame];
-  std::ignore = device.waitForFences(frameFence, true,
-                                     std::numeric_limits<uint64_t>::max());
-  std::optional<ImageIndex> imageIndex =
-      swapchain.nextImage(readyImageSemaphore);
-  if (!imageIndex.has_value()) {
+void render(std::span<vk::CommandBuffer> commandBuffers,
+            vk::Queue graphicsQueue, Swapchain &swapchain) {
+  auto frame = swapchain.nextImage();
+  if (!frame.has_value()) {
     return;
   }
-  auto &imageFence = imageFences[*imageIndex];
-  if (imageFence != nullptr) {
-    std::ignore = device.waitForFences(imageFence, true,
-                                       std::numeric_limits<uint64_t>::max());
-  }
-  imageFence = frameFence;
-  device.resetFences(frameFence);
-  auto commandBuffer = commandBuffers[*imageIndex];
+  auto commandBuffer = commandBuffers[frame->image];
   vk::PipelineStageFlags waitStage =
       vk::PipelineStageFlagBits::eColorAttachmentOutput;
   auto submitInfo = vk::SubmitInfo{}
-                        .setWaitSemaphores(readyImageSemaphore)
+                        .setWaitSemaphores(frame->readySemaphore)
                         .setWaitDstStageMask(waitStage)
                         .setCommandBuffers(commandBuffer)
-                        .setSignalSemaphores(doneImageSemaphore);
-  graphicsQueue.submit(submitInfo, frameFence);
-  swapchain.present(*imageIndex, doneImageSemaphore);
+                        .setSignalSemaphores(frame->doneSemaphore);
+  graphicsQueue.submit(submitInfo, frame->fence);
+  swapchain.present(*frame);
 }
 
 int main(void) {
@@ -282,19 +263,6 @@ int main(void) {
           vk::CommandPoolCreateFlagBits::eTransient, device.workQueueIndex()});
   auto renderCommandPool = device.vkDevice().createCommandPoolUnique(
       vk::CommandPoolCreateInfo{{}, device.graphicsQueueIndex()});
-  std::array<vk::UniqueFence, kMaxConcurrentFrames> frameFences;
-  std::array<vk::UniqueSemaphore, kMaxConcurrentFrames> readyImageSemaphores;
-  std::array<vk::UniqueSemaphore, kMaxConcurrentFrames> doneImageSemaphores;
-  std::ranges::generate(frameFences, [&device]() {
-    return device.vkDevice().createFenceUnique(
-        vk::FenceCreateInfo{}.setFlags(vk::FenceCreateFlagBits::eSignaled));
-  });
-  std::ranges::generate(readyImageSemaphores, [&device]() {
-    return device.vkDevice().createSemaphoreUnique({});
-  });
-  std::ranges::generate(doneImageSemaphores, [&device]() {
-    return device.vkDevice().createSemaphoreUnique({});
-  });
   auto renderContext = createRenderContext(window, device, *renderCommandPool);
   auto [pipeline, pipelineLayout, shaderModules] = createWhiteGraphicsPipeline(
       renderContext.extent(), *renderContext.renderPass, device.vkDevice());
@@ -316,20 +284,15 @@ int main(void) {
   }
 
   // Game loop
-  uint32_t currentFrame = 0;
-  std::vector<vk::Fence> imageFences;
-  imageFences.resize(renderContext.imageCount());
   while (!window.shouldClose()) {
-    render(currentFrame, renderContext.commandBuffers, frameFences,
-           readyImageSemaphores, doneImageSemaphores, imageFences,
-           device.vkDevice(), device.graphicsQueue(), renderContext.swapchain);
+    render(renderContext.commandBuffers, device.graphicsQueue(),
+           renderContext.swapchain);
     if (renderContext.needsRecreation()) {
       window.waitForValidDimensions();
       device.waitIdle();
       renderContext = createRenderContext(window, device, *renderCommandPool,
                                           std::move(renderContext.swapchain));
     }
-    currentFrame++;
     glfwPollEvents();
   }
   device.waitIdle();
