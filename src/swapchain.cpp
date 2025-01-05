@@ -106,7 +106,7 @@ Swapchain Swapchain::create(const Window &window, const GraphicsDevice &device,
           std::move(imageFences)};
 }
 
-std::optional<Swapchain::Frame> Swapchain::nextImage() {
+std::optional<Frame> Swapchain::nextImage() {
   auto readySemaphore = _readySemaphores[_frame].get();
   auto doneSemaphore = _doneSemaphores[_frame].get();
   auto frameFence = _frameFences[_frame].get();

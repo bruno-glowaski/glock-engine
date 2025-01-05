@@ -8,6 +8,13 @@
 
 using ImageIndex = uint32_t;
 
+struct Frame {
+  ImageIndex image;
+  vk::Semaphore readySemaphore;
+  vk::Semaphore doneSemaphore;
+  vk::Fence fence;
+};
+
 struct GraphicsDevice;
 struct Window;
 struct Swapchain {
@@ -31,13 +38,6 @@ struct Swapchain {
 
   static Swapchain create(const Window &window, const GraphicsDevice &device,
                           std::optional<Swapchain> oldSwapchain = std::nullopt);
-
-  struct Frame {
-    ImageIndex image;
-    vk::Semaphore readySemaphore;
-    vk::Semaphore doneSemaphore;
-    vk::Fence fence;
-  };
 
   std::optional<Frame> nextImage();
   void present(Frame frame);
