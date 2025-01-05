@@ -1,3 +1,4 @@
+#include "material.hpp"
 #include <array>
 #include <cstdlib>
 #include <print>
@@ -18,8 +19,9 @@
 #include "window.hpp"
 
 const auto kVertices =
-    std::to_array({glm::vec3(-1.0, 1.0, 0.0), glm::vec3(1.0, 1.0, 0.0),
-                   glm::vec3(0.0, -1.0, 0.0)});
+    std::to_array<SimpleMaterial::Vertex>({{glm::vec3(-1.0, 1.0, 0.0)},
+                                           {glm::vec3(1.0, 1.0, 0.0)},
+                                           {glm::vec3(0.0, -1.0, 0.0)}});
 const auto kIndices = std::to_array<uint16_t>({0, 1, 2});
 
 int main(void) {
@@ -30,16 +32,19 @@ int main(void) {
       device.createWorkCommandPool(vk::CommandPoolCreateFlagBits::eTransient);
   auto swapchain = Swapchain::create(window, device);
 
+  // Create systems
+  auto renderSystem = RenderSystem::create(device, swapchain);
+
   // Load model
+  auto material = SimpleMaterial::create(device, workCommandPool.get(),
+                                         renderSystem, {1.0, 1.0, 1.0});
+  renderSystem.setMaterial(material);
   auto vertexBuffer =
       Buffer::createGPUOnlyArray(device, workCommandPool.get(), kVertices,
                                  vk::BufferUsageFlagBits::eVertexBuffer);
   auto indexBuffer =
       Buffer::createGPUOnlyArray(device, workCommandPool.get(), kIndices,
                                  vk::BufferUsageFlagBits::eIndexBuffer);
-
-  // Create systems
-  auto renderSystem = RenderSystem::create(device, swapchain);
 
   // Game loop
   while (!window.shouldClose()) {
@@ -55,6 +60,9 @@ int main(void) {
       swapchain = Swapchain::create(window, device, std::move(swapchain));
       renderSystem =
           RenderSystem::create(device, swapchain, std::move(renderSystem));
+      material =
+          SimpleMaterial::create(device, workCommandPool.get(), renderSystem,
+                                 {1.0, 1.0, 1.0}, std::move(material));
     }
     glfwPollEvents();
   }

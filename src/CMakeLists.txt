@@ -1,6 +1,7 @@
 add_executable(engine 
   "${CMAKE_CURRENT_SOURCE_DIR}/buffer.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/graphics_device.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/material.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/render_system.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/swapchain.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/window.cpp"

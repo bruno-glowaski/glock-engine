@@ -15,11 +15,16 @@ struct Buffer {
   static Buffer
   createGPUOnlyArray(const GraphicsDevice &device, vk::CommandPool commandPool,
                      const TRange &range, vk::BufferUsageFlags usage);
+  template <class T>
+  static Buffer createGPUOnly(const GraphicsDevice &device,
+                              vk::CommandPool commandPool, const T &src,
+                              vk::BufferUsageFlags usage);
 
   inline vk::Buffer vkBuffer() const { return _vkBuffer.get(); };
 
   template <std::ranges::range TRange>
   void copyRangeInto(const GraphicsDevice &device, const TRange &range);
+  template <class T> void copyInto(const GraphicsDevice &device, const T &src);
 
 private:
   vma::UniqueBuffer _vkBuffer;

@@ -1,35 +1,8 @@
 #include "render_system.hpp"
 
-#include <fstream>
-#include <ios>
-#include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_handles.hpp>
-
 #include "graphics_device.hpp"
+#include "material.hpp"
 #include "swapchain.hpp"
-
-static constexpr auto kVertexBindings = std::to_array({
-    vk::VertexInputBindingDescription{0, sizeof(glm::vec3)},
-});
-static constexpr auto kVertexAttributes = std::to_array({
-    vk::VertexInputAttributeDescription{0, 0, vk::Format::eR32G32B32Sfloat, 0},
-});
-
-const auto kVertShaderPath = "./assets/shaders/white.vert.spv";
-const auto kFragShaderPath = "./assets/shaders/white.frag.spv";
-
-vk::UniqueShaderModule loadShaderFromPath(const std::string_view path,
-                                          vk::Device device) {
-  std::ifstream file(path.data(), std::ios::binary);
-  if (!file.is_open()) {
-    throw std::runtime_error(std::format("failed to open file {}", path));
-  }
-  std::vector<char> shaderData{std::istreambuf_iterator(file), {}};
-  return device.createShaderModuleUnique(
-      vk::ShaderModuleCreateInfo{}
-          .setCodeSize(shaderData.size())
-          .setPCode(reinterpret_cast<const uint32_t *>(shaderData.data())));
-}
 
 vk::UniqueRenderPass createRenderPass(vk::Device device,
                                       vk::Format swapchainFormat) {
@@ -63,10 +36,12 @@ vk::UniqueRenderPass createRenderPass(vk::Device device,
       {}, attachments, subpasses, subpassDependencies});
 }
 
-vk::UniquePipeline
-createSimpleGraphicsPipeline(vk::PipelineLayout layout,
-                             std::span<vk::UniqueShaderModule, 2> shaderModules,
-                             vk::RenderPass renderPass, vk::Device device) {
+vk::UniquePipeline createSimpleGraphicsPipeline(
+    vk::PipelineLayout layout,
+    std::span<vk::UniqueShaderModule, 2> shaderModules,
+    std::span<const vk::VertexInputBindingDescription> vertexBindings,
+    std::span<const vk::VertexInputAttributeDescription> vertexAttributes,
+    vk::RenderPass renderPass, vk::Device device) {
   auto stages = std::to_array({
       vk::PipelineShaderStageCreateInfo{
           {}, vk::ShaderStageFlagBits::eVertex, *shaderModules[0], "main"},
@@ -74,7 +49,7 @@ createSimpleGraphicsPipeline(vk::PipelineLayout layout,
           {}, vk::ShaderStageFlagBits::eFragment, *shaderModules[1], "main"},
   });
   vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
-      {}, kVertexBindings, kVertexAttributes};
+      {}, vertexBindings, vertexAttributes};
   vk::PipelineInputAssemblyStateCreateInfo inputAssemblyInfo{
       {}, vk::PrimitiveTopology::eTriangleList};
   auto dynamicStates = std::to_array({
@@ -115,39 +90,6 @@ createSimpleGraphicsPipeline(vk::PipelineLayout layout,
   return pipeline;
 }
 
-void recordCommandBuffer(vk::CommandBuffer commandBuffer, vk::Extent2D extent,
-                         vk::RenderPass renderPass, vk::Pipeline pipeline,
-                         vk::Buffer vertexBuffer, vk::Buffer indexBuffer,
-                         uint32_t vertexCount, vk::Framebuffer framebuffer) {
-  vk::ClearValue clearValues = {
-      vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}}};
-  vk::Viewport viewport{
-      0.0f,
-      0.0f,
-      static_cast<float>(extent.width),
-      static_cast<float>(extent.height),
-      0.0f,
-      1.0f,
-  };
-  vk::Rect2D scissor{{0, 0}, extent};
-
-  commandBuffer.begin(vk::CommandBufferBeginInfo{});
-  commandBuffer.beginRenderPass(vk::RenderPassBeginInfo{}
-                                    .setRenderPass(renderPass)
-                                    .setFramebuffer(framebuffer)
-                                    .setClearValues(clearValues)
-                                    .setRenderArea(vk::Rect2D{{0, 0}, extent}),
-                                vk::SubpassContents::eInline);
-  commandBuffer.setViewport(0, viewport);
-  commandBuffer.setScissor(0, scissor);
-  commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-  commandBuffer.bindVertexBuffers(0, vertexBuffer, {0});
-  commandBuffer.bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint16);
-  commandBuffer.draw(vertexCount, 1, 0, 0);
-  commandBuffer.endRenderPass();
-  commandBuffer.end();
-}
-
 RenderSystem RenderSystem::create(const GraphicsDevice &device,
                                   const Swapchain &swapchain,
                                   std::optional<RenderSystem> old) {
@@ -155,13 +97,9 @@ RenderSystem RenderSystem::create(const GraphicsDevice &device,
 
   vk::UniqueCommandPool commandPool;
   std::vector<vk::CommandBuffer> commandBuffers;
-  vk::UniquePipelineLayout pipelineLayout;
-  std::array<vk::UniqueShaderModule, 2> shaderModules;
   if (old.has_value()) {
     commandPool = std::move(old->_vkCommandPool);
     commandBuffers = std::move(old->_commandBuffers);
-    pipelineLayout = std::move(old->_vkPipelineLayout);
-    shaderModules = std::move(old->_vkShaderModules);
   } else {
     commandPool = device.createGraphicsCommandPool(
         vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
@@ -169,18 +107,9 @@ RenderSystem RenderSystem::create(const GraphicsDevice &device,
         vk::CommandBufferAllocateInfo{}
             .setCommandBufferCount(Swapchain::kMaxConcurrentFrames)
             .setCommandPool(commandPool.get()));
-    pipelineLayout =
-        vkDevice.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo{});
-    shaderModules = std::to_array({
-        loadShaderFromPath(kVertShaderPath, vkDevice),
-        loadShaderFromPath(kFragShaderPath, vkDevice),
-    });
   }
 
   auto renderPass = createRenderPass(device.vkDevice(), swapchain.format());
-  auto pipeline = createSimpleGraphicsPipeline(
-      pipelineLayout.get(), shaderModules, renderPass.get(), vkDevice);
-
   auto framebuffers = swapchain.images() |
                       std::ranges::views::transform([&](vk::ImageView view) {
                         return device.vkDevice().createFramebufferUnique(
@@ -195,28 +124,54 @@ RenderSystem RenderSystem::create(const GraphicsDevice &device,
   auto renderCommandPool = device.vkDevice().createCommandPoolUnique(
       vk::CommandPoolCreateInfo{{}, device.graphicsQueueIndex()});
   return {
-      device.graphicsQueue(),   std::move(commandPool),
-      commandBuffers,           std::move(pipelineLayout),
-      std::move(shaderModules), std::move(renderPass),
-      std::move(pipeline),      std::move(framebuffers),
+      device.graphicsQueue(), std::move(commandPool),  commandBuffers,
+      std::move(renderPass),  std::move(framebuffers),
   };
 }
 
-void RenderSystem::render(Frame &frame, vk::Extent2D viewport,
+void RenderSystem::setMaterial(const SimpleMaterial &material) {
+  _material = &material;
+}
+
+void RenderSystem::render(Frame &frame, vk::Extent2D extent,
                           vk::Buffer vertexBuffer, vk::Buffer indexBuffer,
                           uint32_t indexCount) {
-  auto commandBuffer = _commandBuffers[frame.index];
+  vk::ClearValue clearValues = {
+      vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}}};
+  vk::Viewport viewport{
+      0.0f,
+      0.0f,
+      static_cast<float>(extent.width),
+      static_cast<float>(extent.height),
+      0.0f,
+      1.0f,
+  };
+  vk::Rect2D scissor{{0, 0}, extent};
+
+  auto cmd = _commandBuffers[frame.index];
   auto framebuffer = _vkFramebuffers[frame.image].get();
-  commandBuffer.reset();
-  recordCommandBuffer(commandBuffer, viewport, _vkRenderPass.get(),
-                      _vkPipeline.get(), vertexBuffer, indexBuffer, indexCount,
-                      framebuffer);
+  cmd.reset();
+  cmd.begin(vk::CommandBufferBeginInfo{});
+  cmd.beginRenderPass(vk::RenderPassBeginInfo{}
+                          .setRenderPass(_vkRenderPass.get())
+                          .setFramebuffer(framebuffer)
+                          .setClearValues(clearValues)
+                          .setRenderArea(vk::Rect2D{{0, 0}, extent}),
+                      vk::SubpassContents::eInline);
+  cmd.setViewport(0, viewport);
+  cmd.setScissor(0, scissor);
+  _material->render(frame, cmd, vertexBuffer, indexBuffer, indexCount);
+  cmd.setViewport(0, viewport);
+  cmd.setScissor(0, scissor);
+  cmd.endRenderPass();
+  cmd.end();
+
   vk::PipelineStageFlags waitStage =
       vk::PipelineStageFlagBits::eColorAttachmentOutput;
   auto submitInfo = vk::SubmitInfo{}
                         .setWaitSemaphores(frame.readySemaphore)
                         .setWaitDstStageMask(waitStage)
-                        .setCommandBuffers(commandBuffer)
+                        .setCommandBuffers(cmd)
                         .setSignalSemaphores(frame.doneSemaphore);
   _graphicsQueue.submit(submitInfo, frame.fence);
 }
