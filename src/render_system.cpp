@@ -118,7 +118,7 @@ vk::UniqueRenderPass createRenderPass(vk::Device device,
 
 void recordCommandBuffer(vk::CommandBuffer commandBuffer, vk::Extent2D extent,
                          vk::RenderPass renderPass, vk::Pipeline pipeline,
-                         vk::Buffer vertexBuffer, uint32_t verticeCount,
+                         vk::Buffer vertexBuffer, uint32_t vertexCount,
                          vk::Framebuffer framebuffer) {
   vk::ClearValue clearValues = {
       vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}}};
@@ -143,7 +143,7 @@ void recordCommandBuffer(vk::CommandBuffer commandBuffer, vk::Extent2D extent,
   commandBuffer.setScissor(0, scissor);
   commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
   commandBuffer.bindVertexBuffers(0, vertexBuffer, {0});
-  commandBuffer.draw(verticeCount, 1, 0, 0);
+  commandBuffer.draw(vertexCount, 1, 0, 0);
   commandBuffer.endRenderPass();
   commandBuffer.end();
 }
