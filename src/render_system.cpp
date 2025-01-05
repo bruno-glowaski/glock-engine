@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <ios>
+#include <vulkan/vulkan_handles.hpp>
 
 #include "graphics_device.hpp"
 #include "swapchain.hpp"
@@ -139,17 +140,27 @@ void recordRenderCommandBuffer(vk::CommandBuffer commandBuffer,
 RenderSystem RenderSystem::create(const GraphicsDevice &device,
                                   const Swapchain &swapchain,
                                   vk::Buffer vertexBuffer, uint32_t vertexCount,
-                                  std::optional<RenderSystem>) {
+                                  std::optional<RenderSystem> old) {
   auto vkDevice = device.vkDevice();
-  auto commandPool = vkDevice.createCommandPoolUnique(
-      vk::CommandPoolCreateInfo{}.setQueueFamilyIndex(
-          device.graphicsQueueIndex()));
-  auto pipelineLayout =
-      vkDevice.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo{});
-  auto shaderModules = std::to_array({
-      loadShaderFromPath(kVertShaderPath, vkDevice),
-      loadShaderFromPath(kFragShaderPath, vkDevice),
-  });
+
+  vk::UniqueCommandPool commandPool;
+  vk::UniquePipelineLayout pipelineLayout;
+  std::array<vk::UniqueShaderModule, 2> shaderModules;
+  if (old.has_value()) {
+    commandPool = std::move(old->_vkCommandPool);
+    pipelineLayout = std::move(old->_vkPipelineLayout);
+    shaderModules = std::move(old->_vkShaderModules);
+  } else {
+    commandPool = vkDevice.createCommandPoolUnique(
+        vk::CommandPoolCreateInfo{}.setQueueFamilyIndex(
+            device.graphicsQueueIndex()));
+    pipelineLayout =
+        vkDevice.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo{});
+    shaderModules = std::to_array({
+        loadShaderFromPath(kVertShaderPath, vkDevice),
+        loadShaderFromPath(kFragShaderPath, vkDevice),
+    });
+  }
 
   auto renderPass = createRenderPass(device.vkDevice(), swapchain.format());
   auto pipeline = createSimpleGraphicsPipeline(
