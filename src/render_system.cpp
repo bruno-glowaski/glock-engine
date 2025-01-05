@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <ios>
+#include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
 
 #include "graphics_device.hpp"
@@ -34,7 +35,6 @@ vk::UniqueShaderModule loadShaderFromPath(const std::string_view path,
 vk::UniquePipeline
 createSimpleGraphicsPipeline(vk::PipelineLayout layout,
                              std::span<vk::UniqueShaderModule, 2> shaderModules,
-                             vk::Extent2D swapchainExtent,
                              vk::RenderPass renderPass, vk::Device device) {
   auto stages = std::to_array({
       vk::PipelineShaderStageCreateInfo{
@@ -46,18 +46,17 @@ createSimpleGraphicsPipeline(vk::PipelineLayout layout,
       {}, kVertexBindings, kVertexAttributes};
   vk::PipelineInputAssemblyStateCreateInfo inputAssemblyInfo{
       {}, vk::PrimitiveTopology::eTriangleList};
-  vk::Viewport viewport{
-      0.0f,
-      0.0f,
-      static_cast<float>(swapchainExtent.width),
-      static_cast<float>(swapchainExtent.height),
-      0.0f,
-      1.0f,
-  };
-  vk::Rect2D scissor{{0, 0}, swapchainExtent};
-  vk::PipelineViewportStateCreateInfo viewportInfo{{}, viewport, scissor};
+  auto dynamicStates = std::to_array({
+      vk::DynamicState::eViewport,
+      vk::DynamicState::eScissor,
+  });
+  auto dynamicStatesInfo =
+      vk::PipelineDynamicStateCreateInfo{}.setDynamicStates(dynamicStates);
   auto rasterizationState =
       vk::PipelineRasterizationStateCreateInfo{}.setLineWidth(1.0f);
+  auto viewportState =
+      vk::PipelineViewportStateCreateInfo{}.setViewportCount(1).setScissorCount(
+          1);
   vk::PipelineMultisampleStateCreateInfo multisampleState{};
   auto colorBlendingAttachments = std::to_array({
       vk::PipelineColorBlendAttachmentState{}
@@ -74,10 +73,11 @@ createSimpleGraphicsPipeline(vk::PipelineLayout layout,
                                   .setStages(stages)
                                   .setPVertexInputState(&vertexInputInfo)
                                   .setPInputAssemblyState(&inputAssemblyInfo)
-                                  .setPViewportState(&viewportInfo)
+                                  .setPViewportState(&viewportState)
                                   .setPRasterizationState(&rasterizationState)
                                   .setPMultisampleState(&multisampleState)
                                   .setPColorBlendState(&colorBlendState)
+                                  .setPDynamicState(&dynamicStatesInfo)
                                   .setLayout(layout)
                                   .setRenderPass(renderPass))
                       .value;
@@ -121,15 +121,27 @@ void recordRenderCommandBuffer(vk::CommandBuffer commandBuffer,
                                vk::Pipeline pipeline, vk::Buffer vertexBuffer,
                                uint32_t verticeCount,
                                vk::Framebuffer framebuffer) {
-  commandBuffer.begin(vk::CommandBufferBeginInfo{});
   vk::ClearValue clearValues = {
       vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}}};
+  vk::Viewport viewport{
+      0.0f,
+      0.0f,
+      static_cast<float>(extent.width),
+      static_cast<float>(extent.height),
+      0.0f,
+      1.0f,
+  };
+  vk::Rect2D scissor{{0, 0}, extent};
+
+  commandBuffer.begin(vk::CommandBufferBeginInfo{});
   commandBuffer.beginRenderPass(vk::RenderPassBeginInfo{}
                                     .setRenderPass(renderPass)
                                     .setFramebuffer(framebuffer)
                                     .setClearValues(clearValues)
                                     .setRenderArea(vk::Rect2D{{0, 0}, extent}),
                                 vk::SubpassContents::eInline);
+  commandBuffer.setViewport(0, viewport);
+  commandBuffer.setScissor(0, scissor);
   commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
   commandBuffer.bindVertexBuffers(0, vertexBuffer, {0});
   commandBuffer.draw(verticeCount, 1, 0, 0);
@@ -164,8 +176,7 @@ RenderSystem RenderSystem::create(const GraphicsDevice &device,
 
   auto renderPass = createRenderPass(device.vkDevice(), swapchain.format());
   auto pipeline = createSimpleGraphicsPipeline(
-      pipelineLayout.get(), shaderModules, swapchain.extent(), renderPass.get(),
-      vkDevice);
+      pipelineLayout.get(), shaderModules, renderPass.get(), vkDevice);
 
   auto framebuffers = swapchain.images() |
                       std::ranges::views::transform([&](vk::ImageView view) {
