@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <optional>
 #include <vulkan/vulkan.hpp>
 
@@ -11,6 +12,8 @@
 struct GraphicsDevice;
 struct RenderSystem;
 struct ColorfulMaterial : public Material {
+  using Duration = std::chrono::duration<float>;
+
   ColorfulMaterial(vk::UniquePipelineLayout vkPipelineLayout,
                    std::array<vk::UniqueShaderModule, 2> vkShaderModules,
                    vk::UniquePipeline vkPipeline)
@@ -23,7 +26,7 @@ struct ColorfulMaterial : public Material {
          std::optional<ColorfulMaterial> old = std::nullopt);
 
   struct PerFrameUniforms {
-    float ellapsedTime;
+    float time;
   };
 
   struct Vertex {
@@ -38,7 +41,9 @@ struct ColorfulMaterial : public Material {
     });
   };
 
-  inline void setEllapsedTime(float value) { _ellapsedTime = value; }
+  template <class TDuration> inline void setTime(const TDuration &value) {
+    _time = std::chrono::duration_cast<Duration>(value).count();
+  }
   void render(const Frame &frame, vk::CommandBuffer cmd,
               vk::Buffer vertexBuffer, vk::Buffer indexBuffer,
               uint32_t indexCount) const;
@@ -47,5 +52,5 @@ private:
   vk::UniquePipelineLayout _vkPipelineLayout;
   std::array<vk::UniqueShaderModule, 2> _vkShaderModules;
   vk::UniquePipeline _vkPipeline;
-  float _ellapsedTime = 0.0;
+  float _time = 0.0;
 };

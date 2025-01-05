@@ -97,7 +97,7 @@ void ColorfulMaterial::render(const Frame &, vk::CommandBuffer cmd,
   cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, _vkPipeline.get());
   cmd.pushConstants<PerFrameUniforms>(_vkPipelineLayout.get(),
                                       vk::ShaderStageFlagBits::eFragment, 0,
-                                      PerFrameUniforms{_ellapsedTime});
+                                      PerFrameUniforms{_time});
   cmd.bindVertexBuffers(0, vertexBuffer, {0});
   cmd.bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint16);
   cmd.drawIndexed(indexCount, 1, 0, 0, 0);

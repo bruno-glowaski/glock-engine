@@ -1,8 +1,11 @@
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <print>
+#include <ratio>
 #include <string_view>
 
+#include <thread>
 #include <vulkan/vulkan.hpp>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -17,6 +20,15 @@
 #include "render_system.hpp"
 #include "swapchain.hpp"
 #include "window.hpp"
+
+using Second = std::chrono::duration<uint64_t>;
+using FSecond = std::chrono::duration<float>;
+using FrameDuration = std::chrono::duration<uint64_t, std::nano>;
+using FFrameDuration = std::chrono::duration<float>;
+
+const uint64_t MAX_FPS = 60;
+const FrameDuration MIN_FRAME_DURATION =
+    std::chrono::duration_cast<FrameDuration>(Second{1}) / MAX_FPS;
 
 const auto kVertices =
     std::to_array<ColorfulMaterial::Vertex>({{glm::vec3(-1.0, 1.0, 0.0)},
@@ -46,9 +58,28 @@ int main(void) {
                                  vk::BufferUsageFlagBits::eIndexBuffer);
 
   // Game loop
-  float ellapsedTime = 1.0;
+  auto lastTime = std::chrono::system_clock::now();
+  FrameDuration totalTime{};
+  FrameDuration lag{};
   while (!window.shouldClose()) {
-    material.setEllapsedTime(ellapsedTime);
+    auto currentTime = std::chrono::system_clock::now();
+    auto deltaTime =
+        std::chrono::duration_cast<FrameDuration>(currentTime - lastTime);
+    lastTime = currentTime;
+    totalTime += deltaTime;
+    lag += deltaTime;
+
+    glfwPollEvents();
+
+    if (lag < MIN_FRAME_DURATION) {
+      auto d = MIN_FRAME_DURATION - lag;
+      std::this_thread::sleep_for(d);
+      continue;
+    }
+    lag -= MIN_FRAME_DURATION;
+
+    material.setTime(totalTime);
+
     auto frame = swapchain.nextImage();
     if (frame.has_value()) {
       renderSystem.render(*frame, swapchain.extent(), vertexBuffer.vkBuffer(),
@@ -64,7 +95,6 @@ int main(void) {
       material =
           ColorfulMaterial::create(device, renderSystem, std::move(material));
     }
-    glfwPollEvents();
   }
   device.waitIdle();
   return 0;
