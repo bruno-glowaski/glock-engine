@@ -7,7 +7,7 @@
 struct GraphicsDevice;
 struct Swapchain;
 struct Frame;
-struct SimpleMaterial;
+struct Material;
 struct RenderSystem {
   RenderSystem(vk::Queue graphicsQueue, vk::UniqueCommandPool vkCommandPool,
                std::vector<vk::CommandBuffer> commandBuffers,
@@ -23,7 +23,7 @@ struct RenderSystem {
 
   inline vk::RenderPass vkRenderPass() const { return _vkRenderPass.get(); }
 
-  void setMaterial(const SimpleMaterial &material);
+  void setMaterial(const Material &material);
   void render(Frame &frame, vk::Extent2D viewport, vk::Buffer vertexBuffer,
               vk::Buffer indexBuffer, uint32_t indexCount);
 
@@ -35,7 +35,7 @@ private:
   std::vector<vk::CommandBuffer> _commandBuffers;
 
   // Swapchain-related resources
-  const SimpleMaterial *_material = nullptr;
+  const Material *_material = nullptr;
   vk::UniqueRenderPass _vkRenderPass;
 
   // Swapchain-exclusive resources

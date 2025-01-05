@@ -1,4 +1,3 @@
-#include "material.hpp"
 #include <array>
 #include <cstdlib>
 #include <print>
@@ -14,14 +13,15 @@
 #include "buffer.hpp"
 #include "buffer_impl.hpp"
 #include "graphics_device.hpp"
+#include "materials/colorful.hpp"
 #include "render_system.hpp"
 #include "swapchain.hpp"
 #include "window.hpp"
 
 const auto kVertices =
-    std::to_array<SimpleMaterial::Vertex>({{glm::vec3(-1.0, 1.0, 0.0)},
-                                           {glm::vec3(1.0, 1.0, 0.0)},
-                                           {glm::vec3(0.0, -1.0, 0.0)}});
+    std::to_array<ColorfulMaterial::Vertex>({{glm::vec3(-1.0, 1.0, 0.0)},
+                                             {glm::vec3(1.0, 1.0, 0.0)},
+                                             {glm::vec3(0.0, -1.0, 0.0)}});
 const auto kIndices = std::to_array<uint16_t>({0, 1, 2});
 
 int main(void) {
@@ -36,8 +36,7 @@ int main(void) {
   auto renderSystem = RenderSystem::create(device, swapchain);
 
   // Load model
-  auto material = SimpleMaterial::create(device, workCommandPool.get(),
-                                         renderSystem, {1.0, 1.0, 1.0});
+  auto material = ColorfulMaterial::create(device, renderSystem);
   renderSystem.setMaterial(material);
   auto vertexBuffer =
       Buffer::createGPUOnlyArray(device, workCommandPool.get(), kVertices,
@@ -47,7 +46,9 @@ int main(void) {
                                  vk::BufferUsageFlagBits::eIndexBuffer);
 
   // Game loop
+  float ellapsedTime = 1.0;
   while (!window.shouldClose()) {
+    material.setEllapsedTime(ellapsedTime);
     auto frame = swapchain.nextImage();
     if (frame.has_value()) {
       renderSystem.render(*frame, swapchain.extent(), vertexBuffer.vkBuffer(),
@@ -61,8 +62,7 @@ int main(void) {
       renderSystem =
           RenderSystem::create(device, swapchain, std::move(renderSystem));
       material =
-          SimpleMaterial::create(device, workCommandPool.get(), renderSystem,
-                                 {1.0, 1.0, 1.0}, std::move(material));
+          ColorfulMaterial::create(device, renderSystem, std::move(material));
     }
     glfwPollEvents();
   }

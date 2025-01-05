@@ -129,7 +129,7 @@ RenderSystem RenderSystem::create(const GraphicsDevice &device,
   };
 }
 
-void RenderSystem::setMaterial(const SimpleMaterial &material) {
+void RenderSystem::setMaterial(const Material &material) {
   _material = &material;
 }
 

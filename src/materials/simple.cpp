@@ -1,33 +1,21 @@
-#include "material.hpp"
+#include "simple.hpp"
 
 #include <fstream>
 #include <ios>
+#include <string_view>
 
 #include <vulkan/vulkan.hpp>
 
-#include "buffer.hpp"
-#include "buffer_impl.hpp"
-#include "graphics_device.hpp"
-#include "render_system.hpp"
-#include "swapchain.hpp"
+#include "../buffer_impl.hpp"
+#include "../graphics_device.hpp"
+#include "../render_system.hpp"
+#include "../swapchain.hpp"
+#include "utils.hpp"
 
 const auto kVertShaderPath = "./assets/shaders/simple.vert.spv";
 const auto kFragShaderPath = "./assets/shaders/simple.frag.spv";
 
-vk::UniqueShaderModule loadShaderFromPath(const std::string_view path,
-                                          vk::Device device) {
-  std::ifstream file(path.data(), std::ios::binary);
-  if (!file.is_open()) {
-    throw std::runtime_error(std::format("failed to open file {}", path));
-  }
-  std::vector<char> shaderData{std::istreambuf_iterator(file), {}};
-  return device.createShaderModuleUnique(
-      vk::ShaderModuleCreateInfo{}
-          .setCodeSize(shaderData.size())
-          .setPCode(reinterpret_cast<const uint32_t *>(shaderData.data())));
-}
-
-vk::UniquePipeline
+static vk::UniquePipeline
 createPipeline(vk::PipelineLayout layout,
                std::span<vk::UniqueShaderModule, 2> shaderModules,
                vk::RenderPass renderPass, vk::Device device) {
