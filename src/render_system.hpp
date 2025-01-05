@@ -28,7 +28,7 @@ struct RenderSystem {
                              std::optional<RenderSystem> old = std::nullopt);
 
   void render(Frame &frame, vk::Extent2D viewport, vk::Buffer vertexBuffer,
-              uint32_t vertexCount);
+              vk::Buffer indexBuffer, uint32_t indexCount);
 
 private:
   vk::Queue _graphicsQueue;

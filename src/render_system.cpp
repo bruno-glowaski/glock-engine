@@ -9,11 +9,10 @@
 #include "swapchain.hpp"
 
 static constexpr auto kVertexBindings = std::to_array({
-    vk::VertexInputBindingDescription{0, sizeof(glm::vec4)},
+    vk::VertexInputBindingDescription{0, sizeof(glm::vec3)},
 });
 static constexpr auto kVertexAttributes = std::to_array({
-    vk::VertexInputAttributeDescription{0, 0, vk::Format::eR32G32B32A32Sfloat,
-                                        0},
+    vk::VertexInputAttributeDescription{0, 0, vk::Format::eR32G32B32Sfloat, 0},
 });
 
 const auto kVertShaderPath = "./assets/shaders/white.vert.spv";
@@ -30,6 +29,38 @@ vk::UniqueShaderModule loadShaderFromPath(const std::string_view path,
       vk::ShaderModuleCreateInfo{}
           .setCodeSize(shaderData.size())
           .setPCode(reinterpret_cast<const uint32_t *>(shaderData.data())));
+}
+
+vk::UniqueRenderPass createRenderPass(vk::Device device,
+                                      vk::Format swapchainFormat) {
+  auto attachments = std::to_array({
+      vk::AttachmentDescription{}
+          .setFormat(swapchainFormat)
+          .setLoadOp(vk::AttachmentLoadOp::eClear)
+          .setStoreOp(vk::AttachmentStoreOp::eStore)
+          .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+          .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+          .setInitialLayout(vk::ImageLayout::eUndefined)
+          .setFinalLayout(vk::ImageLayout::ePresentSrcKHR),
+  });
+  auto attachmentsRefs = std::to_array({
+      vk::AttachmentReference{0, vk::ImageLayout::eColorAttachmentOptimal},
+  });
+  auto subpasses = std::to_array({
+      vk::SubpassDescription{}
+          .setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
+          .setColorAttachments(attachmentsRefs[0]),
+  });
+  auto subpassDependencies = std::to_array({
+      vk::SubpassDependency{}
+          .setSrcSubpass(vk::SubpassExternal)
+          .setDstSubpass(0)
+          .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+          .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
+          .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite),
+  });
+  return device.createRenderPassUnique(vk::RenderPassCreateInfo{
+      {}, attachments, subpasses, subpassDependencies});
 }
 
 vk::UniquePipeline
@@ -84,42 +115,10 @@ createSimpleGraphicsPipeline(vk::PipelineLayout layout,
   return pipeline;
 }
 
-vk::UniqueRenderPass createRenderPass(vk::Device device,
-                                      vk::Format swapchainFormat) {
-  auto attachments = std::to_array({
-      vk::AttachmentDescription{}
-          .setFormat(swapchainFormat)
-          .setLoadOp(vk::AttachmentLoadOp::eClear)
-          .setStoreOp(vk::AttachmentStoreOp::eStore)
-          .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
-          .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-          .setInitialLayout(vk::ImageLayout::eUndefined)
-          .setFinalLayout(vk::ImageLayout::ePresentSrcKHR),
-  });
-  auto attachmentsRefs = std::to_array({
-      vk::AttachmentReference{0, vk::ImageLayout::eColorAttachmentOptimal},
-  });
-  auto subpasses = std::to_array({
-      vk::SubpassDescription{}
-          .setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
-          .setColorAttachments(attachmentsRefs[0]),
-  });
-  auto subpassDependencies = std::to_array({
-      vk::SubpassDependency{}
-          .setSrcSubpass(vk::SubpassExternal)
-          .setDstSubpass(0)
-          .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-          .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-          .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite),
-  });
-  return device.createRenderPassUnique(vk::RenderPassCreateInfo{
-      {}, attachments, subpasses, subpassDependencies});
-}
-
 void recordCommandBuffer(vk::CommandBuffer commandBuffer, vk::Extent2D extent,
                          vk::RenderPass renderPass, vk::Pipeline pipeline,
-                         vk::Buffer vertexBuffer, uint32_t vertexCount,
-                         vk::Framebuffer framebuffer) {
+                         vk::Buffer vertexBuffer, vk::Buffer indexBuffer,
+                         uint32_t vertexCount, vk::Framebuffer framebuffer) {
   vk::ClearValue clearValues = {
       vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}}};
   vk::Viewport viewport{
@@ -143,6 +142,7 @@ void recordCommandBuffer(vk::CommandBuffer commandBuffer, vk::Extent2D extent,
   commandBuffer.setScissor(0, scissor);
   commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
   commandBuffer.bindVertexBuffers(0, vertexBuffer, {0});
+  commandBuffer.bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint16);
   commandBuffer.draw(vertexCount, 1, 0, 0);
   commandBuffer.endRenderPass();
   commandBuffer.end();
@@ -203,12 +203,13 @@ RenderSystem RenderSystem::create(const GraphicsDevice &device,
 }
 
 void RenderSystem::render(Frame &frame, vk::Extent2D viewport,
-                          vk::Buffer vertexBuffer, uint32_t vertexCount) {
+                          vk::Buffer vertexBuffer, vk::Buffer indexBuffer,
+                          uint32_t indexCount) {
   auto commandBuffer = _commandBuffers[frame.index];
   auto framebuffer = _vkFramebuffers[frame.image].get();
   commandBuffer.reset();
   recordCommandBuffer(commandBuffer, viewport, _vkRenderPass.get(),
-                      _vkPipeline.get(), vertexBuffer, vertexCount,
+                      _vkPipeline.get(), vertexBuffer, indexBuffer, indexCount,
                       framebuffer);
   vk::PipelineStageFlags waitStage =
       vk::PipelineStageFlagBits::eColorAttachmentOutput;

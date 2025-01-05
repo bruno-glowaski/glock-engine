@@ -17,9 +17,10 @@
 #include "swapchain.hpp"
 #include "window.hpp"
 
-const auto kVertices = std::to_array({glm::vec4(-1.0, 1.0, 0.0, 1.0),
-                                      glm::vec4(1.0, 1.0, 0.0, 1.0),
-                                      glm::vec4(0.0, -1.0, 0.0, 1.0)});
+const auto kVertices =
+    std::to_array({glm::vec3(-1.0, 1.0, 0.0), glm::vec3(1.0, 1.0, 0.0),
+                   glm::vec3(0.0, -1.0, 0.0)});
+const auto kIndices = std::to_array<uint16_t>({0, 1, 2});
 
 int main(void) {
   auto window = Window::create("Glock Engine", 640, 480);
@@ -29,10 +30,13 @@ int main(void) {
       device.createWorkCommandPool(vk::CommandPoolCreateFlagBits::eTransient);
   auto swapchain = Swapchain::create(window, device);
 
-  // Load vertex buffer
+  // Load model
   auto vertexBuffer =
       Buffer::createGPUOnlyArray(device, workCommandPool.get(), kVertices,
                                  vk::BufferUsageFlagBits::eVertexBuffer);
+  auto indexBuffer =
+      Buffer::createGPUOnlyArray(device, workCommandPool.get(), kIndices,
+                                 vk::BufferUsageFlagBits::eIndexBuffer);
 
   // Create systems
   auto renderSystem = RenderSystem::create(device, swapchain);
@@ -42,7 +46,7 @@ int main(void) {
     auto frame = swapchain.nextImage();
     if (frame.has_value()) {
       renderSystem.render(*frame, swapchain.extent(), vertexBuffer.vkBuffer(),
-                          kVertices.size());
+                          indexBuffer.vkBuffer(), kIndices.size());
       swapchain.present(*frame);
     }
     if (swapchain.needsRecreation()) {
