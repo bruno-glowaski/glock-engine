@@ -126,7 +126,7 @@ std::optional<Frame> Swapchain::nextImage() {
     imageFence = frameFence;
     _owner.resetFences(frameFence);
     _needsRecreation = result.result == vk::Result::eSuccess;
-    return {{image, readySemaphore, doneSemaphore, frameFence}};
+    return {{_frame, image, readySemaphore, doneSemaphore, frameFence}};
   } catch (vk::OutOfDateKHRError &) {
     _needsRecreation = true;
     return std::nullopt;

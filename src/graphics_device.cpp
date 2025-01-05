@@ -163,3 +163,12 @@ GraphicsDevice GraphicsDevice::createFor(const Window &window,
 }
 
 void GraphicsDevice::waitIdle() const { _vkDevice->waitIdle(); }
+vk::UniqueCommandPool GraphicsDevice::createGraphicsCommandPool(
+    vk::CommandPoolCreateFlags flags) const {
+  return _vkDevice->createCommandPoolUnique({flags, graphicsQueueIndex()});
+}
+
+vk::UniqueCommandPool
+GraphicsDevice::createWorkCommandPool(vk::CommandPoolCreateFlags flags) const {
+  return _vkDevice->createCommandPoolUnique({flags, workQueueIndex()});
+}

@@ -6,9 +6,11 @@
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_handles.hpp>
 
+using FrameIndex = uint32_t;
 using ImageIndex = uint32_t;
 
 struct Frame {
+  FrameIndex index;
   ImageIndex image;
   vk::Semaphore readySemaphore;
   vk::Semaphore doneSemaphore;
@@ -66,5 +68,5 @@ private:
   std::array<vk::UniqueFence, kMaxConcurrentFrames> _frameFences;
   std::vector<vk::Fence> _imageFences;
   bool _needsRecreation = false;
-  uint32_t _frame = 0;
+  FrameIndex _frame = 0;
 };

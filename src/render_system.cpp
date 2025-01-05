@@ -116,11 +116,10 @@ vk::UniqueRenderPass createRenderPass(vk::Device device,
       {}, attachments, subpasses, subpassDependencies});
 }
 
-void recordRenderCommandBuffer(vk::CommandBuffer commandBuffer,
-                               vk::Extent2D extent, vk::RenderPass renderPass,
-                               vk::Pipeline pipeline, vk::Buffer vertexBuffer,
-                               uint32_t verticeCount,
-                               vk::Framebuffer framebuffer) {
+void recordCommandBuffer(vk::CommandBuffer commandBuffer, vk::Extent2D extent,
+                         vk::RenderPass renderPass, vk::Pipeline pipeline,
+                         vk::Buffer vertexBuffer, uint32_t verticeCount,
+                         vk::Framebuffer framebuffer) {
   vk::ClearValue clearValues = {
       vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}}};
   vk::Viewport viewport{
@@ -151,21 +150,25 @@ void recordRenderCommandBuffer(vk::CommandBuffer commandBuffer,
 
 RenderSystem RenderSystem::create(const GraphicsDevice &device,
                                   const Swapchain &swapchain,
-                                  vk::Buffer vertexBuffer, uint32_t vertexCount,
                                   std::optional<RenderSystem> old) {
   auto vkDevice = device.vkDevice();
 
   vk::UniqueCommandPool commandPool;
+  std::vector<vk::CommandBuffer> commandBuffers;
   vk::UniquePipelineLayout pipelineLayout;
   std::array<vk::UniqueShaderModule, 2> shaderModules;
   if (old.has_value()) {
     commandPool = std::move(old->_vkCommandPool);
+    commandBuffers = std::move(old->_commandBuffers);
     pipelineLayout = std::move(old->_vkPipelineLayout);
     shaderModules = std::move(old->_vkShaderModules);
   } else {
-    commandPool = vkDevice.createCommandPoolUnique(
-        vk::CommandPoolCreateInfo{}.setQueueFamilyIndex(
-            device.graphicsQueueIndex()));
+    commandPool = device.createGraphicsCommandPool(
+        vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
+    commandBuffers = vkDevice.allocateCommandBuffers(
+        vk::CommandBufferAllocateInfo{}
+            .setCommandBufferCount(Swapchain::kMaxConcurrentFrames)
+            .setCommandPool(commandPool.get()));
     pipelineLayout =
         vkDevice.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo{});
     shaderModules = std::to_array({
@@ -189,27 +192,24 @@ RenderSystem RenderSystem::create(const GraphicsDevice &device,
                                 .setLayers(1));
                       }) |
                       std::ranges::to<std::vector>();
-  auto commandBuffers = device.vkDevice().allocateCommandBuffers(
-      vk::CommandBufferAllocateInfo{}
-          .setCommandPool(commandPool.get())
-          .setCommandBufferCount((uint32_t)framebuffers.size()));
   auto renderCommandPool = device.vkDevice().createCommandPoolUnique(
       vk::CommandPoolCreateInfo{{}, device.graphicsQueueIndex()});
-  for (auto [commandBuffer, framebuffer] :
-       std::ranges::views::zip(commandBuffers, framebuffers)) {
-    recordRenderCommandBuffer(commandBuffer, swapchain.extent(),
-                              renderPass.get(), pipeline.get(), vertexBuffer,
-                              vertexCount, framebuffer.get());
-  }
-
-  return {device.graphicsQueue(),    std::move(commandPool),
-          std::move(pipelineLayout), std::move(shaderModules),
-          std::move(renderPass),     std::move(pipeline),
-          std::move(framebuffers),   commandBuffers};
+  return {
+      device.graphicsQueue(),   std::move(commandPool),
+      commandBuffers,           std::move(pipelineLayout),
+      std::move(shaderModules), std::move(renderPass),
+      std::move(pipeline),      std::move(framebuffers),
+  };
 }
 
-void RenderSystem::render(Frame &frame) {
-  auto commandBuffer = _commandBuffers[frame.image];
+void RenderSystem::render(Frame &frame, vk::Extent2D viewport,
+                          vk::Buffer vertexBuffer, uint32_t vertexCount) {
+  auto commandBuffer = _commandBuffers[frame.index];
+  auto framebuffer = _vkFramebuffers[frame.image].get();
+  commandBuffer.reset();
+  recordCommandBuffer(commandBuffer, viewport, _vkRenderPass.get(),
+                      _vkPipeline.get(), vertexBuffer, vertexCount,
+                      framebuffer);
   vk::PipelineStageFlags waitStage =
       vk::PipelineStageFlagBits::eColorAttachmentOutput;
   auto submitInfo = vk::SubmitInfo{}

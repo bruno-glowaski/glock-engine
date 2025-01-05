@@ -45,6 +45,10 @@ struct GraphicsDevice {
   inline vk::Queue graphicsQueue() const { return _graphicsQueue; }
   inline vk::Queue presentQueue() const { return _presentQueue; }
 
+  vk::UniqueCommandPool
+  createGraphicsCommandPool(vk::CommandPoolCreateFlags flags) const;
+  vk::UniqueCommandPool
+  createWorkCommandPool(vk::CommandPoolCreateFlags flags) const;
   void waitIdle() const;
 
 private:

@@ -68,8 +68,7 @@ int main(void) {
   auto device =
       GraphicsDevice::createFor(window, "Glock Engine", MAKE_VERSION(0, 1, 0));
   auto workCommandPool =
-      device.vkDevice().createCommandPoolUnique(vk::CommandPoolCreateInfo{
-          vk::CommandPoolCreateFlagBits::eTransient, device.workQueueIndex()});
+      device.createWorkCommandPool(vk::CommandPoolCreateFlagBits::eTransient);
   auto swapchain = Swapchain::create(window, device);
 
   // Load vertex buffer
@@ -81,14 +80,14 @@ int main(void) {
       device.workQueue(), device.vkDevice(), device.vmaAllocator());
 
   // Create systems
-  auto renderSystem = RenderSystem::create(device, swapchain,
-                                           vertexBuffer.get(), vertices.size());
+  auto renderSystem = RenderSystem::create(device, swapchain);
 
   // Game loop
   while (!window.shouldClose()) {
     auto frame = swapchain.nextImage();
     if (frame.has_value()) {
-      renderSystem.render(*frame);
+      renderSystem.render(*frame, swapchain.extent(), vertexBuffer.get(),
+                          vertices.size());
       swapchain.present(*frame);
     }
     if (swapchain.needsRecreation()) {
@@ -96,8 +95,7 @@ int main(void) {
       device.waitIdle();
       swapchain = Swapchain::create(window, device, std::move(swapchain));
       renderSystem =
-          RenderSystem::create(device, swapchain, vertexBuffer.get(),
-                               vertices.size(), std::move(renderSystem));
+          RenderSystem::create(device, swapchain, std::move(renderSystem));
     }
     glfwPollEvents();
   }
