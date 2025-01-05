@@ -1,15 +1,7 @@
 #include <array>
-#include <cstdint>
 #include <cstdlib>
-#include <fstream>
-#include <iostream>
 #include <print>
-#include <ranges>
-#include <stdexcept>
 #include <string_view>
-#include <tuple>
-
-namespace views = std::ranges::views;
 
 #include <vulkan/vulkan.hpp>
 
