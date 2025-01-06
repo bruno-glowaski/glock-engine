@@ -43,6 +43,32 @@ const auto kIndices = std::to_array<uint16_t>(
     {4, 2, 0, 2, 7, 3, 6, 5, 7, 1, 7, 5, 0, 3, 1, 4, 1, 5,
      4, 6, 2, 2, 6, 7, 6, 4, 5, 1, 3, 7, 0, 2, 3, 4, 0, 1});
 
+template <std::invocable<FrameDuration> TTick>
+inline void runGameLoop(const Window &window, TTick tick) {
+  auto lastTime = std::chrono::system_clock::now();
+  FrameDuration totalTime{};
+  FrameDuration lag{};
+  while (!window.shouldClose()) {
+    auto currentTime = std::chrono::system_clock::now();
+    auto deltaTime =
+        std::chrono::duration_cast<FrameDuration>(currentTime - lastTime);
+    lastTime = currentTime;
+    totalTime += deltaTime;
+    lag += deltaTime;
+
+    glfwPollEvents();
+
+    if (lag < MIN_FRAME_DURATION) {
+      auto d = MIN_FRAME_DURATION - lag;
+      std::this_thread::sleep_for(d);
+      continue;
+    }
+    lag -= MIN_FRAME_DURATION;
+
+    tick(totalTime);
+  }
+}
+
 int main(void) {
   auto window = Window::create("Glock Engine", 640, 480);
   auto device =
@@ -64,27 +90,7 @@ int main(void) {
       Buffer::createGPUOnlyArray(device, workCommandPool.get(), kIndices,
                                  vk::BufferUsageFlagBits::eIndexBuffer);
 
-  // Game loop
-  auto lastTime = std::chrono::system_clock::now();
-  FrameDuration totalTime{};
-  FrameDuration lag{};
-  while (!window.shouldClose()) {
-    auto currentTime = std::chrono::system_clock::now();
-    auto deltaTime =
-        std::chrono::duration_cast<FrameDuration>(currentTime - lastTime);
-    lastTime = currentTime;
-    totalTime += deltaTime;
-    lag += deltaTime;
-
-    glfwPollEvents();
-
-    if (lag < MIN_FRAME_DURATION) {
-      auto d = MIN_FRAME_DURATION - lag;
-      std::this_thread::sleep_for(d);
-      continue;
-    }
-    lag -= MIN_FRAME_DURATION;
-
+  runGameLoop(window, [&](FrameDuration totalTime) {
     material.setTime(totalTime);
 
     auto viewport = swapchain.extent();
@@ -101,12 +107,7 @@ int main(void) {
     auto proj = glm::perspective(fov, aspectRatio, 0.1f, 100.0f);
     proj[1][1] *= -1;
     auto mvp = proj * view * model;
-    auto frame = swapchain.nextImage();
-    if (frame.has_value()) {
-      renderSystem.render(*frame, viewport, {mvp}, vertexBuffer.vkBuffer(),
-                          indexBuffer.vkBuffer(), kIndices.size());
-      swapchain.present(*frame);
-    }
+
     if (swapchain.needsRecreation()) {
       window.waitForValidDimensions();
       device.waitIdle();
@@ -117,7 +118,15 @@ int main(void) {
           ColorfulMaterial::create(device, renderSystem, std::move(material));
       renderSystem.setMaterial(material);
     }
-  }
+
+    auto frame = swapchain.nextImage();
+    if (!frame.has_value()) {
+      return;
+    }
+    renderSystem.render(*frame, viewport, {mvp}, vertexBuffer.vkBuffer(),
+                        indexBuffer.vkBuffer(), kIndices.size());
+    swapchain.present(*frame);
+  });
   device.waitIdle();
   return 0;
 }
