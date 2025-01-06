@@ -30,6 +30,8 @@ struct ColorfulMaterial : public Material {
   };
 
   struct Vertex {
+    Vertex(float x, float y, float z) : position(x, y, z) {}
+
     glm::vec3 position;
 
     static constexpr auto kBindings = std::to_array({
@@ -45,8 +47,8 @@ struct ColorfulMaterial : public Material {
     _time = std::chrono::duration_cast<Duration>(value).count();
   }
   void render(const Frame &frame, vk::CommandBuffer cmd,
-              vk::Buffer vertexBuffer, vk::Buffer indexBuffer,
-              uint32_t indexCount) const;
+              const MeshUniforms &meshUniforms, vk::Buffer vertexBuffer,
+              vk::Buffer indexBuffer, uint32_t indexCount) const;
 
 private:
   vk::UniquePipelineLayout _vkPipelineLayout;

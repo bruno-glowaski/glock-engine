@@ -48,8 +48,8 @@ struct SimpleMaterial : public Material {
   };
 
   void render(const Frame &frame, vk::CommandBuffer cmd,
-              vk::Buffer vertexBuffer, vk::Buffer indexBuffer,
-              uint32_t indexCount) const;
+              const MeshUniforms &meshUniforms, vk::Buffer vertexBuffer,
+              vk::Buffer indexBuffer, uint32_t indexCount) const;
 
 private:
   vk::UniqueDescriptorPool _vkDescriptorPool;

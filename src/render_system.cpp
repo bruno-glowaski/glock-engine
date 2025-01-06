@@ -134,6 +134,7 @@ void RenderSystem::setMaterial(const Material &material) {
 }
 
 void RenderSystem::render(Frame &frame, vk::Extent2D extent,
+                          const MeshUniforms &meshUniforms,
                           vk::Buffer vertexBuffer, vk::Buffer indexBuffer,
                           uint32_t indexCount) {
   vk::ClearValue clearValues = {
@@ -160,7 +161,8 @@ void RenderSystem::render(Frame &frame, vk::Extent2D extent,
                       vk::SubpassContents::eInline);
   cmd.setViewport(0, viewport);
   cmd.setScissor(0, scissor);
-  _material->render(frame, cmd, vertexBuffer, indexBuffer, indexCount);
+  _material->render(frame, cmd, meshUniforms, vertexBuffer, indexBuffer,
+                    indexCount);
   cmd.setViewport(0, viewport);
   cmd.setScissor(0, scissor);
   cmd.endRenderPass();

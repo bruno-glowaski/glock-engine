@@ -88,8 +88,14 @@ SimpleMaterial SimpleMaterial::create(const GraphicsDevice &device,
   });
   auto setLayout = vkDevice.createDescriptorSetLayoutUnique(
       vk::DescriptorSetLayoutCreateInfo{}.setBindings(setBindings));
+  auto pushConstantRanges = std::to_array({vk::PushConstantRange{
+      kVertexAndFragmentStages, 0, sizeof(MeshUniforms)}});
+  static_assert(sizeof(MeshUniforms) < 128,
+                "Push constant bigger than minimum guaranteed size.");
   auto pipelineLayout = vkDevice.createPipelineLayoutUnique(
-      vk::PipelineLayoutCreateInfo{}.setSetLayouts(setLayout.get()));
+      vk::PipelineLayoutCreateInfo{}
+          .setSetLayouts(setLayout.get())
+          .setPushConstantRanges(pushConstantRanges));
 
   auto perMaterialUBO =
       Buffer::createGPUOnly(device, workCommandPool, PerMaterialUniforms{color},
@@ -125,9 +131,12 @@ SimpleMaterial SimpleMaterial::create(const GraphicsDevice &device,
 }
 
 void SimpleMaterial::render(const Frame &, vk::CommandBuffer cmd,
+                            const MeshUniforms &meshUniforms,
                             vk::Buffer vertexBuffer, vk::Buffer indexBuffer,
                             uint32_t indexCount) const {
   cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, _vkPipeline.get());
+  cmd.pushConstants<MeshUniforms>(_vkPipelineLayout.get(),
+                                  kVertexAndFragmentStages, 0, meshUniforms);
   cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                          _vkPipelineLayout.get(), 0, _perMaterialDescriptorSet,
                          {});

@@ -1,7 +1,7 @@
 #include "colorful.hpp"
 
 #include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_structs.hpp>
+#include <vulkan/vulkan_enums.hpp>
 
 #include "../buffer_impl.hpp"
 #include "../graphics_device.hpp"
@@ -71,12 +71,11 @@ ColorfulMaterial ColorfulMaterial::create(const GraphicsDevice &device,
                                           std::optional<ColorfulMaterial>) {
   auto vkDevice = device.vkDevice();
 
-  auto pushConstantRanges = std::to_array({
-      vk::PushConstantRange{vk::ShaderStageFlagBits::eFragment, 0,
-                            sizeof(PerFrameUniforms)},
-  });
-  static_assert(sizeof(PerFrameUniforms) < 128,
-                "Push constant uniforms bigger than minimum guaranteed size.");
+  auto pushConstantRanges = std::to_array(
+      {vk::PushConstantRange{kVertexAndFragmentStages, 0,
+                             sizeof(MeshUniforms) + sizeof(PerFrameUniforms)}});
+  static_assert(sizeof(MeshUniforms) + sizeof(PerFrameUniforms) < 128,
+                "Push constant bigger than minimum guaranteed size.");
   auto pipelineLayout = vkDevice.createPipelineLayoutUnique(
       vk::PipelineLayoutCreateInfo{}.setPushConstantRanges(pushConstantRanges));
 
@@ -92,12 +91,15 @@ ColorfulMaterial ColorfulMaterial::create(const GraphicsDevice &device,
 }
 
 void ColorfulMaterial::render(const Frame &, vk::CommandBuffer cmd,
+                              const MeshUniforms &meshUniforms,
                               vk::Buffer vertexBuffer, vk::Buffer indexBuffer,
                               uint32_t indexCount) const {
   cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, _vkPipeline.get());
-  cmd.pushConstants<PerFrameUniforms>(_vkPipelineLayout.get(),
-                                      vk::ShaderStageFlagBits::eFragment, 0,
-                                      PerFrameUniforms{_time});
+  cmd.pushConstants<MeshUniforms>(_vkPipelineLayout.get(),
+                                  kVertexAndFragmentStages, 0, meshUniforms);
+  cmd.pushConstants<PerFrameUniforms>(
+      _vkPipelineLayout.get(), kVertexAndFragmentStages, sizeof(MeshUniforms),
+      PerFrameUniforms{_time});
   cmd.bindVertexBuffers(0, vertexBuffer, {0});
   cmd.bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint16);
   cmd.drawIndexed(indexCount, 1, 0, 0, 0);

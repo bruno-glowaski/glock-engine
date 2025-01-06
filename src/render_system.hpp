@@ -6,8 +6,9 @@
 
 struct GraphicsDevice;
 struct Swapchain;
-struct Frame;
 struct Material;
+struct Frame;
+struct MeshUniforms;
 struct RenderSystem {
   RenderSystem(vk::Queue graphicsQueue, vk::UniqueCommandPool vkCommandPool,
                std::vector<vk::CommandBuffer> commandBuffers,
@@ -24,7 +25,8 @@ struct RenderSystem {
   inline vk::RenderPass vkRenderPass() const { return _vkRenderPass.get(); }
 
   void setMaterial(const Material &material);
-  void render(Frame &frame, vk::Extent2D viewport, vk::Buffer vertexBuffer,
+  void render(Frame &frame, vk::Extent2D viewport,
+              const MeshUniforms &meshUniforms, vk::Buffer vertexBuffer,
               vk::Buffer indexBuffer, uint32_t indexCount);
 
 private:
