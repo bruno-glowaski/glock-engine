@@ -9,6 +9,7 @@ struct Swapchain;
 struct Material;
 struct Frame;
 struct MeshUniforms;
+struct Model;
 struct RenderSystem {
   RenderSystem(vk::Queue graphicsQueue, vk::UniqueCommandPool vkCommandPool,
                std::vector<vk::CommandBuffer> commandBuffers,
@@ -26,8 +27,7 @@ struct RenderSystem {
 
   void setMaterial(const Material &material);
   void render(Frame &frame, vk::Extent2D viewport,
-              const MeshUniforms &meshUniforms, vk::Buffer vertexBuffer,
-              vk::Buffer indexBuffer, uint32_t indexCount);
+              const MeshUniforms &meshUniforms, const Model &model);
 
 private:
   vk::Queue _graphicsQueue;

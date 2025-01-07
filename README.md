@@ -16,10 +16,9 @@ cd build && bin/engine
 
 ## Todo
 
-- [ ] Remove `vk` preffixes from Vulkan primitive members;
+- [x] Refactor models into their own class;
 - [ ] Add texture loading;
 - [ ] Render a skybox;
-- [ ] Refactor models into their own class;
 - [ ] Add music;
 - [ ] Refactor resource loading;
 - [ ] Render sprite text;

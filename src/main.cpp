@@ -18,6 +18,8 @@
 #include "buffer_impl.hpp"
 #include "graphics_device.hpp"
 #include "materials/colorful.hpp"
+#include "model.hpp"
+#include "model_impl.hpp"
 #include "render_system.hpp"
 #include "swapchain.hpp"
 #include "window.hpp"
@@ -83,12 +85,8 @@ int main(void) {
   // Load model
   auto material = ColorfulMaterial::create(device, renderSystem);
   renderSystem.setMaterial(material);
-  auto vertexBuffer =
-      Buffer::createGPUOnlyArray(device, workCommandPool.get(), kVertices,
-                                 vk::BufferUsageFlagBits::eVertexBuffer);
-  auto indexBuffer =
-      Buffer::createGPUOnlyArray(device, workCommandPool.get(), kIndices,
-                                 vk::BufferUsageFlagBits::eIndexBuffer);
+  auto model =
+      Model::fromRanges(device, workCommandPool.get(), kVertices, kIndices);
 
   runGameLoop(window, [&](FrameDuration totalTime) {
     material.setTime(totalTime);
@@ -98,15 +96,16 @@ int main(void) {
     const float aspectRatio = static_cast<float>(viewport.width) /
                               static_cast<float>(viewport.height);
     auto seconds = std::chrono::duration_cast<FSecond>(totalTime).count();
-    auto model = glm::rotate(
+    auto modelMat = glm::rotate(
         glm::translate(glm::identity<glm::mat4>(),
                        glm::vec3{0.0, glm::sin(seconds * 0.5), 3.0}),
         seconds, glm::vec3{1.0, 2.0, 3.0});
-    auto view = glm::lookAt(glm::vec3{0.0, 0.0, 0.0}, glm::vec3{0.0, 0.0, 1.0},
-                            glm::vec3{0.0, 1.0, 0.0});
-    auto proj = glm::perspective(fov, aspectRatio, 0.1f, 100.0f);
-    proj[1][1] *= -1;
-    auto mvp = proj * view * model;
+    auto viewMat =
+        glm::lookAt(glm::vec3{0.0, 0.0, 0.0}, glm::vec3{0.0, 0.0, 1.0},
+                    glm::vec3{0.0, 1.0, 0.0});
+    auto projMat = glm::perspective(fov, aspectRatio, 0.1f, 100.0f);
+    projMat[1][1] *= -1;
+    auto mvp = projMat * viewMat * modelMat;
 
     if (swapchain.needsRecreation()) {
       window.waitForValidDimensions();
@@ -123,8 +122,7 @@ int main(void) {
     if (!frame.has_value()) {
       return;
     }
-    renderSystem.render(*frame, viewport, {mvp}, vertexBuffer.vkBuffer(),
-                        indexBuffer.vkBuffer(), kIndices.size());
+    renderSystem.render(*frame, viewport, {mvp}, model);
     swapchain.present(*frame);
   });
   device.waitIdle();

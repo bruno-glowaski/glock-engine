@@ -2,6 +2,7 @@
 
 #include "graphics_device.hpp"
 #include "material.hpp"
+#include "model.hpp"
 #include "swapchain.hpp"
 
 vk::UniqueRenderPass createRenderPass(vk::Device device,
@@ -135,8 +136,7 @@ void RenderSystem::setMaterial(const Material &material) {
 
 void RenderSystem::render(Frame &frame, vk::Extent2D extent,
                           const MeshUniforms &meshUniforms,
-                          vk::Buffer vertexBuffer, vk::Buffer indexBuffer,
-                          uint32_t indexCount) {
+                          const Model &model) {
   vk::ClearValue clearValues = {
       vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}}};
   vk::Viewport viewport{
@@ -161,8 +161,8 @@ void RenderSystem::render(Frame &frame, vk::Extent2D extent,
                       vk::SubpassContents::eInline);
   cmd.setViewport(0, viewport);
   cmd.setScissor(0, scissor);
-  _material->render(frame, cmd, meshUniforms, vertexBuffer, indexBuffer,
-                    indexCount);
+  _material->render(frame, cmd, meshUniforms, model.vertexBuffer().vkBuffer(),
+                    model.indexBuffer().vkBuffer(), model.indexCount());
   cmd.setViewport(0, viewport);
   cmd.setScissor(0, scissor);
   cmd.endRenderPass();
