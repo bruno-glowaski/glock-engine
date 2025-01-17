@@ -40,6 +40,10 @@ createPipeline(vk::PipelineLayout layout,
       vk::PipelineViewportStateCreateInfo{}.setViewportCount(1).setScissorCount(
           1);
   vk::PipelineMultisampleStateCreateInfo multisampleState{};
+  auto depthStencilState = vk::PipelineDepthStencilStateCreateInfo{}
+                               .setDepthTestEnable(true)
+                               .setDepthWriteEnable(true)
+                               .setDepthCompareOp(vk::CompareOp::eLess);
   auto colorBlendingAttachments = std::to_array({
       vk::PipelineColorBlendAttachmentState{}
           .setBlendEnable(false)
@@ -58,6 +62,7 @@ createPipeline(vk::PipelineLayout layout,
                                   .setPViewportState(&viewportState)
                                   .setPRasterizationState(&rasterizationState)
                                   .setPMultisampleState(&multisampleState)
+                                  .setPDepthStencilState(&depthStencilState)
                                   .setPColorBlendState(&colorBlendState)
                                   .setPDynamicState(&dynamicStatesInfo)
                                   .setLayout(layout)

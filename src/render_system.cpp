@@ -1,5 +1,6 @@
 #include "render_system.hpp"
 
+#include <array>
 #include <ranges>
 
 #include "graphics_device.hpp"
@@ -127,17 +128,17 @@ RenderSystem RenderSystem::create(const GraphicsDevice &device,
             .setCommandPool(commandPool.get()));
   }
 
-  auto renderPass = createRenderPass(device.vkDevice(), device.depthFormat(),
-                                     swapchain.format());
-  std::vector<Texture2D> depthBuffers;
-  std::ranges::generate_n(depthBuffers.begin(),
-                          static_cast<ssize_t>(swapchain.imageCount()), [&]() {
-                            return Texture2D::create(
-                                device, swapchain.extent(),
-                                device.depthFormat(),
-                                vk::ImageUsageFlagBits::eDepthStencilAttachment,
-                                vma::MemoryUsage::eGpuOnly);
-                          });
+  auto renderPass = createRenderPass(device.vkDevice(), swapchain.format(),
+                                     device.depthFormat());
+  auto depthBuffers =
+      std::views::iota(static_cast<size_t>(0), swapchain.imageCount()) |
+      std::views::transform([&](auto) {
+        return Texture2D::create(
+            device, swapchain.extent(), device.depthFormat(),
+            vk::ImageUsageFlagBits::eDepthStencilAttachment,
+            vma::MemoryUsage::eGpuOnly);
+      }) |
+      std::ranges::to<std::vector<Texture2D>>();
   auto framebuffers = std::views::zip_transform(
                           [&](vk::ImageView color, const Texture2D &depth) {
                             auto attachments = {color, depth.vkImageView()};
@@ -164,8 +165,9 @@ void RenderSystem::setMaterial(const Material &material) {
 void RenderSystem::render(Frame &frame, vk::Extent2D extent,
                           const MeshUniforms &meshUniforms,
                           const Model &model) {
-  vk::ClearValue clearValues = {
-      vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}}};
+  auto clearValues = std::to_array<vk::ClearValue>(
+      {vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}},
+       vk::ClearDepthStencilValue{1.0, 0}});
   vk::Viewport viewport{
       0.0f,
       0.0f,

@@ -4,6 +4,7 @@ add_executable(engine
   "${CMAKE_CURRENT_SOURCE_DIR}/render_system.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/swapchain.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/window.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/textures.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/materials/utils.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/materials/colorful.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/materials/simple.cpp"

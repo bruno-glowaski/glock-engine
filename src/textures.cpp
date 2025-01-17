@@ -1,5 +1,6 @@
 #include "textures.hpp"
 
+#include <stdexcept>
 #include <string>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
@@ -9,8 +10,21 @@
 #include <stb_image.h>
 
 #include "buffer.hpp"
+#include "buffer_impl.hpp"
 #include "graphics_device.hpp"
 #include "graphics_device_impl.hpp"
+
+vk::ImageAspectFlags getAspectForFormat(vk::Format format) {
+  switch (format) {
+  case vk::Format::eD32Sfloat:
+    return vk::ImageAspectFlagBits::eDepth;
+  case vk::Format::eD32SfloatS8Uint:
+  case vk::Format::eD24UnormS8Uint:
+    return vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
+  default:
+    throw std::runtime_error("TBI");
+  }
+}
 
 Texture2D Texture2D::create(const GraphicsDevice &device,
                             vk::Extent2D dimensions, vk::Format format,
@@ -18,11 +32,14 @@ Texture2D Texture2D::create(const GraphicsDevice &device,
                             vma::MemoryUsage memoryUsage) {
   auto [image, allocation] = device.vmaAllocator().createImageUnique(
       vk::ImageCreateInfo{}
+          .setFormat(format)
           .setUsage(usage)
           .setExtent({dimensions.width, dimensions.height, 1})
+          .setArrayLayers(1)
+          .setMipLevels(1)
+          .setImageType(vk::ImageType::e2D)
           .setTiling(vk::ImageTiling::eOptimal)
           .setSharingMode(vk::SharingMode::eExclusive)
-          .setArrayLayers(0)
           .setInitialLayout(vk::ImageLayout::eUndefined),
       vma::AllocationCreateInfo{}.setUsage(memoryUsage));
   auto imageView = device.vkDevice().createImageViewUnique(
@@ -30,11 +47,10 @@ Texture2D Texture2D::create(const GraphicsDevice &device,
           .setFormat(format)
           .setImage(image.get())
           .setViewType(vk::ImageViewType::e2D)
-          .setSubresourceRange(
-              vk::ImageSubresourceRange{}
-                  .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                  .setLayerCount(1)
-                  .setLevelCount(1)));
+          .setSubresourceRange(vk::ImageSubresourceRange{}
+                                   .setAspectMask(getAspectForFormat(format))
+                                   .setLayerCount(1)
+                                   .setLevelCount(1)));
   return {std::move(image), std::move(allocation), std::move(imageView)};
 }
 
