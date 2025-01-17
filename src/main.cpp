@@ -48,14 +48,14 @@ const auto kModelIndices = std::to_array<uint16_t>(
     {4, 2, 0, 2, 7, 3, 6, 5, 7, 1, 7, 5, 0, 3, 1, 4, 1, 5,
      4, 6, 2, 2, 6, 7, 6, 4, 5, 1, 3, 7, 0, 2, 3, 4, 0, 1});
 const auto kSkyBoxVertices =
-    std::to_array<ProceduralMaterial::Vertex>({{100.0, 100.0, -100.0},
-                                               {100.0, -100.0, -100.0},
-                                               {100.0, 100.0, 100.0},
-                                               {100.0, -100.0, 100.0},
-                                               {-100.0, 100.0, -100.0},
-                                               {-100.0, -100.0, -100.0},
-                                               {-100.0, 100.0, 100.0},
-                                               {-100.0, -100.0, 100.0}});
+    std::to_array<ProceduralMaterial::Vertex>({{50.0, 50.0, -50.0},
+                                               {50.0, -50.0, -50.0},
+                                               {50.0, 50.0, 50.0},
+                                               {50.0, -50.0, 50.0},
+                                               {-50.0, 50.0, -50.0},
+                                               {-50.0, -50.0, -50.0},
+                                               {-50.0, 50.0, 50.0},
+                                               {-50.0, -50.0, 50.0}});
 const auto kSkyBoxIndices = std::to_array<uint16_t>(
     {0, 4, 2, 3, 2, 7, 7, 6, 5, 5, 1, 7, 1, 0, 3, 5, 4, 1,
      2, 4, 6, 7, 2, 6, 5, 6, 4, 7, 1, 3, 3, 0, 2, 1, 4, 0});
@@ -114,11 +114,12 @@ int main(void) {
                               static_cast<float>(viewport.height);
     auto seconds = std::chrono::duration_cast<FSecond>(totalTime).count();
     auto modelMat = glm::rotate(
-        glm::translate(glm::identity<glm::mat4>(),
-                       glm::vec3{0.0, glm::sin(seconds * 0.5), 3.0}),
+        glm::translate(
+            glm::identity<glm::mat4>(),
+            glm::vec3{0.0, 7.0 + 6.0 * glm::sin(seconds * 1.5), 12.0}),
         seconds, glm::vec3{1.0, 2.0, 3.0});
     auto viewMat =
-        glm::lookAt(glm::vec3{0.0, 0.0, 0.0}, glm::vec3{0.0, 0.0, 1.0},
+        glm::lookAt(glm::vec3{0.0, 0.0, 0.0}, glm::vec3{0.0, 0.5, 1.0},
                     glm::vec3{0.0, 1.0, 0.0});
     auto projMat = glm::perspective(fov, aspectRatio, 0.1f, 100.0f);
     projMat[1][1] *= -1;
