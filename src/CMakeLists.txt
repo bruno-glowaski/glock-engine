@@ -24,6 +24,10 @@ target_link_libraries(engine PRIVATE
   VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp
 )
 
-target_include_directories(engine SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/libs/VulkanMemoryAllocator-Hpp/include")
+target_include_directories(engine 
+  SYSTEM PRIVATE 
+  "${CMAKE_SOURCE_DIR}/libs/VulkanMemoryAllocator-Hpp/include" 
+  "${CMAKE_SOURCE_DIR}/libs/stb"
+)
 
 # shader subdirectory is handled by parent CMakeLists

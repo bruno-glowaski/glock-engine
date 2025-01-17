@@ -14,8 +14,9 @@ find_package(Vulkan REQUIRED)
 find_package(glm REQUIRED)
 find_package(glfw3 REQUIRED)
 
-add_subdirectory(${CMAKE_SOURCE_DIR}/libs/VulkanMemoryAllocator-Hpp/VulkanMemoryAllocator)
-add_subdirectory(${CMAKE_SOURCE_DIR}/libs/VulkanMemoryAllocator-Hpp)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/libs/VulkanMemoryAllocator-Hpp/VulkanMemoryAllocator)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/libs/VulkanMemoryAllocator-Hpp)
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/libs/stb)
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/src bin)
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/shaders assets/shaders)
