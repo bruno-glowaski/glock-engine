@@ -12,12 +12,11 @@ struct Buffer {
   static Buffer create(const GraphicsDevice &device, vk::BufferUsageFlags usage,
                        vma::MemoryUsage memoryUsage, size_t size);
   template <std::ranges::range TRange>
-  static Buffer
-  createGPUOnlyArray(const GraphicsDevice &device, vk::CommandPool commandPool,
-                     const TRange &range, vk::BufferUsageFlags usage);
+  static Buffer createGPUOnlyArray(const GraphicsDevice &device,
+                                   const TRange &range,
+                                   vk::BufferUsageFlags usage);
   template <class T>
-  static Buffer createGPUOnly(const GraphicsDevice &device,
-                              vk::CommandPool commandPool, const T &src,
+  static Buffer createGPUOnly(const GraphicsDevice &device, const T &src,
                               vk::BufferUsageFlags usage);
 
   inline vk::Buffer vkBuffer() const { return _vkBuffer.get(); };

@@ -13,17 +13,21 @@ using QueueIndex = uint32_t;
 struct Window;
 
 struct GraphicsDevice {
-  GraphicsDevice(vk::UniqueInstance instance, vk::UniqueSurfaceKHR surface,
-                 vk::PhysicalDevice physicalDevice, vk::UniqueDevice device,
+  GraphicsDevice(vk::UniqueInstance vkInstance, vk::UniqueSurfaceKHR vkSurface,
+                 vk::PhysicalDevice vkPhysicalDevice, vk::UniqueDevice vkDevice,
+                 vk::Format depthFormat,
                  std::array<QueueIndex, 2> queueFamilies,
                  uint32_t queueFamilyCount, vk::Queue workQueue,
                  vk::Queue graphicsQueue, vk::Queue presentQueue,
-                 vma::UniqueAllocator _allocator)
-      : _vkInstance(std::move(instance)), _vkSurface(std::move(surface)),
-        _vkPhysicalDevice(physicalDevice), _vkDevice(std::move(device)),
-        _queueFamilies(queueFamilies), _queueFamilyCount(queueFamilyCount),
-        _workQueue(workQueue), _graphicsQueue(graphicsQueue),
-        _presentQueue(presentQueue), _vmaAllocator(std::move(_allocator)) {}
+                 vma::UniqueAllocator vmaAllocator,
+                 vk::UniqueCommandPool workCommandPool)
+      : _vkInstance(std::move(vkInstance)), _vkSurface(std::move(vkSurface)),
+        _vkPhysicalDevice(vkPhysicalDevice), _vkDevice(std::move(vkDevice)),
+        _depthFormat(depthFormat), _queueFamilies(queueFamilies),
+        _queueFamilyCount(queueFamilyCount), _workQueue(workQueue),
+        _graphicsQueue(graphicsQueue), _presentQueue(presentQueue),
+        _vmaAllocator(std::move(vmaAllocator)),
+        _workCommandPool(std::move(workCommandPool)) {}
 
   static GraphicsDevice createFor(const Window &window,
                                   std::string_view appName,
@@ -34,6 +38,7 @@ struct GraphicsDevice {
   inline vk::PhysicalDevice vkPhysicalDevice() const {
     return _vkPhysicalDevice;
   }
+  inline vk::Format depthFormat() const { return _depthFormat; }
   inline vma::Allocator vmaAllocator() const { return _vmaAllocator.get(); }
   inline std::span<const QueueIndex> queueFamilies() const {
     return {_queueFamilies.data(), _queueFamilyCount};
@@ -47,19 +52,21 @@ struct GraphicsDevice {
 
   vk::UniqueCommandPool
   createGraphicsCommandPool(vk::CommandPoolCreateFlags flags) const;
-  vk::UniqueCommandPool
-  createWorkCommandPool(vk::CommandPoolCreateFlags flags) const;
   void waitIdle() const;
+  template <std::invocable<vk::CommandBuffer> TCommandBuilder>
+  void runOneTimeWork(TCommandBuilder buildFn) const;
 
 private:
   vk::UniqueInstance _vkInstance;
   vk::UniqueSurfaceKHR _vkSurface;
   vk::PhysicalDevice _vkPhysicalDevice;
   vk::UniqueDevice _vkDevice;
+  vk::Format _depthFormat;
   std::array<QueueIndex, 2> _queueFamilies;
   uint32_t _queueFamilyCount;
   vk::Queue _workQueue;
   vk::Queue _graphicsQueue;
   vk::Queue _presentQueue;
   vma::UniqueAllocator _vmaAllocator;
+  vk::UniqueCommandPool _workCommandPool;
 };

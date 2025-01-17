@@ -1,18 +1,16 @@
 #include "buffer.hpp"
 
-#include "graphics_device.hpp"
 #include <cstring>
 #include <ranges>
 
+#include "graphics_device.hpp"
+#include "graphics_device_impl.hpp"
+
 template <std::ranges::range TRange>
 Buffer Buffer::createGPUOnlyArray(const GraphicsDevice &device,
-                                  vk::CommandPool commandPool,
                                   const TRange &range,
                                   vk::BufferUsageFlags usage) {
   using TItem = std::ranges::range_value_t<TRange>;
-
-  auto vkDevice = device.vkDevice();
-  auto queue = device.workQueue();
 
   const size_t size = sizeof(TItem) * std::ranges::size(range);
 
@@ -24,29 +22,17 @@ Buffer Buffer::createGPUOnlyArray(const GraphicsDevice &device,
                      vma::MemoryUsage::eCpuToGpu, size);
   stagingBuffer.copyRangeInto(device, range);
 
-  auto commandBuffer =
-      vkDevice.allocateCommandBuffers(vk::CommandBufferAllocateInfo{}
-                                          .setCommandPool(commandPool)
-                                          .setCommandBufferCount(1))[0];
-  commandBuffer.begin(vk::CommandBufferBeginInfo{
-      vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-  commandBuffer.copyBuffer(stagingBuffer.vkBuffer(), finalBuffer.vkBuffer(),
-                           vk::BufferCopy{}.setSize(size));
-  commandBuffer.end();
-  queue.submit(vk::SubmitInfo{}.setCommandBuffers(commandBuffer));
-  queue.waitIdle();
-  vkDevice.freeCommandBuffers(commandPool, commandBuffer);
+  device.runOneTimeWork([&](vk::CommandBuffer cmd) {
+    cmd.copyBuffer(stagingBuffer.vkBuffer(), finalBuffer.vkBuffer(),
+                   vk::BufferCopy{}.setSize(size));
+  });
 
   return finalBuffer;
 }
 
 template <class T>
-Buffer Buffer::createGPUOnly(const GraphicsDevice &device,
-                             vk::CommandPool commandPool, const T &src,
+Buffer Buffer::createGPUOnly(const GraphicsDevice &device, const T &src,
                              vk::BufferUsageFlags usage) {
-  auto vkDevice = device.vkDevice();
-  auto queue = device.workQueue();
-
   const size_t size = sizeof(T);
 
   auto finalBuffer =
@@ -57,18 +43,10 @@ Buffer Buffer::createGPUOnly(const GraphicsDevice &device,
                      vma::MemoryUsage::eCpuToGpu, size);
   stagingBuffer.copyInto(device, src);
 
-  auto commandBuffer =
-      vkDevice.allocateCommandBuffers(vk::CommandBufferAllocateInfo{}
-                                          .setCommandPool(commandPool)
-                                          .setCommandBufferCount(1))[0];
-  commandBuffer.begin(vk::CommandBufferBeginInfo{
-      vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-  commandBuffer.copyBuffer(stagingBuffer.vkBuffer(), finalBuffer.vkBuffer(),
-                           vk::BufferCopy{}.setSize(size));
-  commandBuffer.end();
-  queue.submit(vk::SubmitInfo{}.setCommandBuffers(commandBuffer));
-  queue.waitIdle();
-  vkDevice.freeCommandBuffers(commandPool, commandBuffer);
+  device.runOneTimeWork([&](vk::CommandBuffer cmd) {
+    cmd.copyBuffer(stagingBuffer.vkBuffer(), finalBuffer.vkBuffer(),
+                   vk::BufferCopy{}.setSize(size));
+  });
 
   return finalBuffer;
 }

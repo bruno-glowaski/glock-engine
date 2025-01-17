@@ -27,9 +27,8 @@ struct SimpleMaterial : public Material {
         _vkPipeline(std::move(vkPipeline)) {}
 
   static SimpleMaterial
-  create(const GraphicsDevice &device, vk::CommandPool workCommandPool,
-         const RenderSystem &renderSystem, glm::vec3 color,
-         std::optional<SimpleMaterial> old = std::nullopt);
+  create(const GraphicsDevice &device, const RenderSystem &renderSystem,
+         glm::vec3 color, std::optional<SimpleMaterial> old = std::nullopt);
 
   struct PerMaterialUniforms {
     glm::vec3 color;

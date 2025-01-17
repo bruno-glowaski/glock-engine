@@ -70,7 +70,6 @@ createPipeline(vk::PipelineLayout layout,
 }
 
 SimpleMaterial SimpleMaterial::create(const GraphicsDevice &device,
-                                      vk::CommandPool workCommandPool,
                                       const RenderSystem &renderSystem,
                                       glm::vec3 color,
                                       std::optional<SimpleMaterial>) {
@@ -98,7 +97,7 @@ SimpleMaterial SimpleMaterial::create(const GraphicsDevice &device,
           .setPushConstantRanges(pushConstantRanges));
 
   auto perMaterialUBO =
-      Buffer::createGPUOnly(device, workCommandPool, PerMaterialUniforms{color},
+      Buffer::createGPUOnly(device, PerMaterialUniforms{color},
                             vk::BufferUsageFlagBits::eUniformBuffer);
   auto perMaterialDescriptorSet = vkDevice.allocateDescriptorSets(
       vk::DescriptorSetAllocateInfo{}

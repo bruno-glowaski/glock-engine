@@ -16,14 +16,13 @@ struct Texture2D {
                           vk::Format format, vk::ImageUsageFlags usage,
                           vma::MemoryUsage memoryUsage);
   static Texture2D loadFromFile(const GraphicsDevice &device,
-                                vk::CommandPool workCommandPool,
                                 std::string_view filepath,
                                 vk::ImageUsageFlags usage,
                                 vk::ImageLayout layout);
 
-  void copyFrom(const GraphicsDevice &device, vk::CommandPool workCommandPool,
-                const Buffer &buffer, vk::Extent2D dimensions,
-                vk::ImageLayout srcLayout, vk::ImageLayout dstLayout) const;
+  void copyFrom(const GraphicsDevice &device, const Buffer &buffer,
+                vk::Extent2D dimensions, vk::ImageLayout srcLayout,
+                vk::ImageLayout dstLayout) const;
 
   inline vk::Image vkImage() const { return _vkImage.get(); }
   inline vk::ImageView vkImageView() const { return _vkImageView.get(); }

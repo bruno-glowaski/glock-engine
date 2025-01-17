@@ -13,8 +13,7 @@ struct Model {
         _indexBuffer(std::move(indexBuffer)), _indexCount(indexCount) {}
 
   template <std::ranges::range TVRange, std::ranges::range TIRange>
-  static Model fromRanges(const GraphicsDevice &device,
-                          vk::CommandPool workCommandPool, TVRange vertices,
+  static Model fromRanges(const GraphicsDevice &device, TVRange vertices,
                           TIRange indices);
 
   inline const Buffer &vertexBuffer() const { return _vertexBuffer; }

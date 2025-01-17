@@ -1,12 +1,15 @@
 #include "render_system.hpp"
 
+#include <ranges>
+
 #include "graphics_device.hpp"
 #include "material.hpp"
 #include "model.hpp"
 #include "swapchain.hpp"
 
 vk::UniqueRenderPass createRenderPass(vk::Device device,
-                                      vk::Format swapchainFormat) {
+                                      vk::Format swapchainFormat,
+                                      vk::Format depthFormat) {
   auto attachments = std::to_array({
       vk::AttachmentDescription{}
           .setFormat(swapchainFormat)
@@ -16,22 +19,36 @@ vk::UniqueRenderPass createRenderPass(vk::Device device,
           .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
           .setInitialLayout(vk::ImageLayout::eUndefined)
           .setFinalLayout(vk::ImageLayout::ePresentSrcKHR),
+      vk::AttachmentDescription{}
+          .setFormat(depthFormat)
+          .setLoadOp(vk::AttachmentLoadOp::eClear)
+          .setStoreOp(vk::AttachmentStoreOp::eDontCare)
+          .setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+          .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+          .setInitialLayout(vk::ImageLayout::eUndefined)
+          .setFinalLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal),
   });
   auto attachmentsRefs = std::to_array({
       vk::AttachmentReference{0, vk::ImageLayout::eColorAttachmentOptimal},
+      vk::AttachmentReference{1,
+                              vk::ImageLayout::eDepthStencilAttachmentOptimal},
   });
   auto subpasses = std::to_array({
       vk::SubpassDescription{}
           .setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
-          .setColorAttachments(attachmentsRefs[0]),
+          .setColorAttachments(attachmentsRefs[0])
+          .setPDepthStencilAttachment(&attachmentsRefs[1]),
   });
   auto subpassDependencies = std::to_array({
       vk::SubpassDependency{}
           .setSrcSubpass(vk::SubpassExternal)
           .setDstSubpass(0)
-          .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-          .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput)
-          .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite),
+          .setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput |
+                           vk::PipelineStageFlagBits::eEarlyFragmentTests)
+          .setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput |
+                           vk::PipelineStageFlagBits::eEarlyFragmentTests)
+          .setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite |
+                            vk::AccessFlagBits::eDepthStencilAttachmentWrite),
   });
   return device.createRenderPassUnique(vk::RenderPassCreateInfo{
       {}, attachments, subpasses, subpassDependencies});
@@ -110,23 +127,33 @@ RenderSystem RenderSystem::create(const GraphicsDevice &device,
             .setCommandPool(commandPool.get()));
   }
 
-  auto renderPass = createRenderPass(device.vkDevice(), swapchain.format());
-  auto framebuffers = swapchain.images() |
-                      std::ranges::views::transform([&](vk::ImageView view) {
-                        return device.vkDevice().createFramebufferUnique(
-                            vk::FramebufferCreateInfo{}
-                                .setRenderPass(*renderPass)
-                                .setAttachments(view)
-                                .setWidth(swapchain.extent().width)
-                                .setHeight(swapchain.extent().height)
-                                .setLayers(1));
-                      }) |
+  auto renderPass = createRenderPass(device.vkDevice(), device.depthFormat(),
+                                     swapchain.format());
+  std::vector<Texture2D> depthBuffers;
+  std::ranges::generate_n(depthBuffers.begin(),
+                          static_cast<ssize_t>(swapchain.imageCount()), [&]() {
+                            return Texture2D::create(
+                                device, swapchain.extent(),
+                                device.depthFormat(),
+                                vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                                vma::MemoryUsage::eGpuOnly);
+                          });
+  auto framebuffers = std::views::zip_transform(
+                          [&](vk::ImageView color, const Texture2D &depth) {
+                            auto attachments = {color, depth.vkImageView()};
+                            return device.vkDevice().createFramebufferUnique(
+                                vk::FramebufferCreateInfo{}
+                                    .setRenderPass(*renderPass)
+                                    .setAttachments(attachments)
+                                    .setWidth(swapchain.extent().width)
+                                    .setHeight(swapchain.extent().height)
+                                    .setLayers(1));
+                          },
+                          swapchain.images(), depthBuffers) |
                       std::ranges::to<std::vector>();
-  auto renderCommandPool = device.vkDevice().createCommandPoolUnique(
-      vk::CommandPoolCreateInfo{{}, device.graphicsQueueIndex()});
   return {
       device.graphicsQueue(), std::move(commandPool),  commandBuffers,
-      std::move(renderPass),  std::move(framebuffers),
+      std::move(renderPass),  std::move(depthBuffers), std::move(framebuffers),
   };
 }
 

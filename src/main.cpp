@@ -75,8 +75,6 @@ int main(void) {
   auto window = Window::create("Glock Engine", 640, 480);
   auto device =
       GraphicsDevice::createFor(window, "Glock Engine", MAKE_VERSION(0, 1, 0));
-  auto workCommandPool =
-      device.createWorkCommandPool(vk::CommandPoolCreateFlagBits::eTransient);
   auto swapchain = Swapchain::create(window, device);
 
   // Create systems
@@ -85,8 +83,7 @@ int main(void) {
   // Load model
   auto material = ColorfulMaterial::create(device, renderSystem);
   renderSystem.setMaterial(material);
-  auto model =
-      Model::fromRanges(device, workCommandPool.get(), kVertices, kIndices);
+  auto model = Model::fromRanges(device, kVertices, kIndices);
 
   runGameLoop(window, [&](FrameDuration totalTime) {
     material.setTime(totalTime);

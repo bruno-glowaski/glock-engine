@@ -1,14 +1,16 @@
 #include "textures.hpp"
-#include "buffer.hpp"
 
 #include <string>
 #include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#include "buffer.hpp"
 #include "graphics_device.hpp"
+#include "graphics_device_impl.hpp"
 
 Texture2D Texture2D::create(const GraphicsDevice &device,
                             vk::Extent2D dimensions, vk::Format format,
@@ -37,7 +39,6 @@ Texture2D Texture2D::create(const GraphicsDevice &device,
 }
 
 Texture2D Texture2D::loadFromFile(const GraphicsDevice &device,
-                                  vk::CommandPool workCommandPool,
                                   std::string_view filepath,
                                   vk::ImageUsageFlags usage,
                                   vk::ImageLayout layout) {
@@ -58,60 +59,49 @@ Texture2D Texture2D::loadFromFile(const GraphicsDevice &device,
   auto texture =
       Texture2D::create(device, dimensions, vk::Format::eR8G8B8A8Srgb, usage,
                         vma::MemoryUsage::eGpuOnly);
-  texture.copyFrom(device, workCommandPool, stagingBuffer, dimensions,
+  texture.copyFrom(device, stagingBuffer, dimensions,
                    vk::ImageLayout::eUndefined, layout);
 
   return texture;
 }
 
-void Texture2D::copyFrom(const GraphicsDevice &device,
-                         vk::CommandPool workCommandPool, const Buffer &buffer,
+void Texture2D::copyFrom(const GraphicsDevice &device, const Buffer &buffer,
                          vk::Extent2D dimensions, vk::ImageLayout srcLayout,
                          vk::ImageLayout dstLayout) const {
-  auto vkDevice = device.vkDevice();
-  auto queue = device.workQueue();
-  auto commandBuffer =
-      vkDevice.allocateCommandBuffers(vk::CommandBufferAllocateInfo{}
-                                          .setCommandPool(workCommandPool)
-                                          .setCommandBufferCount(1))[0];
-  commandBuffer.begin(vk::CommandBufferBeginInfo{
-      vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-  commandBuffer.pipelineBarrier(
-      vk::PipelineStageFlagBits::eTopOfPipe,
-      vk::PipelineStageFlagBits::eTransfer, {}, {}, {},
-      vk::ImageMemoryBarrier{}
-          .setImage(vkImage())
-          .setSubresourceRange(
-              vk::ImageSubresourceRange{}
-                  .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                  .setLayerCount(1)
-                  .setLevelCount(1))
-          .setOldLayout(srcLayout)
-          .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
-          .setDstAccessMask(vk::AccessFlagBits::eTransferWrite));
-  commandBuffer.copyBufferToImage(
-      buffer.vkBuffer(), vkImage(), vk::ImageLayout::eTransferDstOptimal,
-      vk::BufferImageCopy{}
-          .setImageExtent({dimensions.width, dimensions.height, 1})
-          .setBufferRowLength(dimensions.width)
-          .setImageSubresource(
-              vk::ImageSubresourceLayers{}.setLayerCount(1).setAspectMask(
-                  vk::ImageAspectFlagBits::eColor)));
-  commandBuffer.pipelineBarrier(
-      vk::PipelineStageFlagBits::eTransfer,
-      vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {},
-      vk::ImageMemoryBarrier{}
-          .setImage(vkImage())
-          .setSubresourceRange(
-              vk::ImageSubresourceRange{}
-                  .setAspectMask(vk::ImageAspectFlagBits::eColor)
-                  .setLayerCount(1)
-                  .setLevelCount(1))
-          .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
-          .setNewLayout(dstLayout)
-          .setDstAccessMask(vk::AccessFlagBits::eTransferWrite));
-  commandBuffer.end();
-  queue.submit(vk::SubmitInfo{}.setCommandBuffers(commandBuffer));
-  queue.waitIdle();
-  vkDevice.freeCommandBuffers(workCommandPool, commandBuffer);
+  device.runOneTimeWork([&](vk::CommandBuffer cmd) {
+    cmd.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eTransfer, {}, {}, {},
+        vk::ImageMemoryBarrier{}
+            .setImage(vkImage())
+            .setSubresourceRange(
+                vk::ImageSubresourceRange{}
+                    .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                    .setLayerCount(1)
+                    .setLevelCount(1))
+            .setOldLayout(srcLayout)
+            .setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+            .setDstAccessMask(vk::AccessFlagBits::eTransferWrite));
+    cmd.copyBufferToImage(
+        buffer.vkBuffer(), vkImage(), vk::ImageLayout::eTransferDstOptimal,
+        vk::BufferImageCopy{}
+            .setImageExtent({dimensions.width, dimensions.height, 1})
+            .setBufferRowLength(dimensions.width)
+            .setImageSubresource(
+                vk::ImageSubresourceLayers{}.setLayerCount(1).setAspectMask(
+                    vk::ImageAspectFlagBits::eColor)));
+    cmd.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {},
+        vk::ImageMemoryBarrier{}
+            .setImage(vkImage())
+            .setSubresourceRange(
+                vk::ImageSubresourceRange{}
+                    .setAspectMask(vk::ImageAspectFlagBits::eColor)
+                    .setLayerCount(1)
+                    .setLevelCount(1))
+            .setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+            .setNewLayout(dstLayout)
+            .setDstAccessMask(vk::AccessFlagBits::eTransferWrite));
+  });
 }

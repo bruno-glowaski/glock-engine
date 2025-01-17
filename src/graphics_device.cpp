@@ -16,6 +16,9 @@ const auto kEngineVersion = VK_MAKE_VERSION(0, 1, 0);
 
 const auto kVkLayers = std::to_array({"VK_LAYER_KHRONOS_validation"});
 const auto kVkDeviceExtensions = std::to_array({vk::KHRSwapchainExtensionName});
+const auto kDepthFormatCandidates = {vk::Format::eD32Sfloat,
+                                     vk::Format::eD32SfloatS8Uint,
+                                     vk::Format::eD24UnormS8Uint};
 
 vk::UniqueInstance createInstance(std::string_view appName,
                                   AppVersion appVersion) {
@@ -149,6 +152,13 @@ GraphicsDevice GraphicsDevice::createFor(const Window &window,
       autoselectPhysicalDevice(physicalDevices, *surface);
   auto [device, graphicsQueue, presentQueue] =
       createDevice(physicalDevice, queueFamilies, queueFamilyCount);
+  auto depthFormat = std::ranges::find_if(
+      kDepthFormatCandidates, [&](const vk::Format &format) {
+        auto formatProperties = physicalDevice.getFormatProperties(format);
+        return (formatProperties.optimalTilingFeatures &
+                vk::FormatFeatureFlagBits::eDepthStencilAttachment) ==
+               vk::FormatFeatureFlagBits::eDepthStencilAttachment;
+      });
   auto workQueue = graphicsQueue;
   auto allocator =
       vma::createAllocatorUnique(vma::AllocatorCreateInfo{}
@@ -156,19 +166,20 @@ GraphicsDevice GraphicsDevice::createFor(const Window &window,
                                      .setVulkanApiVersion(vk::ApiVersion13)
                                      .setPhysicalDevice(physicalDevice)
                                      .setInstance(*instance));
-  return {std::move(instance), std::move(surface), physicalDevice,
-          std::move(device),   queueFamilies,      queueFamilyCount,
-          workQueue,           graphicsQueue,      presentQueue,
-          std::move(allocator)};
+  auto workCommandPool = device->createCommandPoolUnique(
+      vk::CommandPoolCreateInfo{}
+          .setFlags(vk::CommandPoolCreateFlagBits::eTransient)
+          .setQueueFamilyIndex(queueFamilies[1]));
+  return {std::move(instance),  std::move(surface),
+          physicalDevice,       std::move(device),
+          *depthFormat,         queueFamilies,
+          queueFamilyCount,     workQueue,
+          graphicsQueue,        presentQueue,
+          std::move(allocator), std::move(workCommandPool)};
 }
 
 void GraphicsDevice::waitIdle() const { _vkDevice->waitIdle(); }
 vk::UniqueCommandPool GraphicsDevice::createGraphicsCommandPool(
     vk::CommandPoolCreateFlags flags) const {
   return _vkDevice->createCommandPoolUnique({flags, graphicsQueueIndex()});
-}
-
-vk::UniqueCommandPool
-GraphicsDevice::createWorkCommandPool(vk::CommandPoolCreateFlags flags) const {
-  return _vkDevice->createCommandPoolUnique({flags, workQueueIndex()});
 }

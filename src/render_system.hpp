@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include "textures.hpp"
+
 struct GraphicsDevice;
 struct Swapchain;
 struct Material;
@@ -14,9 +16,12 @@ struct RenderSystem {
   RenderSystem(vk::Queue graphicsQueue, vk::UniqueCommandPool vkCommandPool,
                std::vector<vk::CommandBuffer> commandBuffers,
                vk::UniqueRenderPass vkRenderPass,
+               std::vector<Texture2D> depthBuffers,
                std::vector<vk::UniqueFramebuffer> vkFramebuffers)
       : _graphicsQueue(graphicsQueue), _vkCommandPool(std::move(vkCommandPool)),
-        _commandBuffers(commandBuffers), _vkRenderPass(std::move(vkRenderPass)),
+        _commandBuffers(std::move(commandBuffers)),
+        _vkRenderPass(std::move(vkRenderPass)),
+        _depthBuffers(std::move(depthBuffers)),
         _vkFramebuffers(std::move(vkFramebuffers)) {}
 
   static RenderSystem create(const GraphicsDevice &device,
@@ -41,5 +46,6 @@ private:
   vk::UniqueRenderPass _vkRenderPass;
 
   // Swapchain-exclusive resources
+  std::vector<Texture2D> _depthBuffers;
   std::vector<vk::UniqueFramebuffer> _vkFramebuffers;
 };
