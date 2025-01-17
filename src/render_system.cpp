@@ -158,13 +158,11 @@ RenderSystem RenderSystem::create(const GraphicsDevice &device,
   };
 }
 
-void RenderSystem::setMaterial(const Material &material) {
-  _material = &material;
-}
-
-void RenderSystem::render(Frame &frame, vk::Extent2D extent,
-                          const MeshUniforms &meshUniforms,
-                          const Model &model) {
+void RenderSystem::render(
+    Frame &frame, vk::Extent2D extent,
+    std::initializer_list<
+        std::tuple<Material &, const MeshUniforms &, const Model &>>
+        objects) {
   auto clearValues = std::to_array<vk::ClearValue>(
       {vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}},
        vk::ClearDepthStencilValue{1.0, 0}});
@@ -190,8 +188,10 @@ void RenderSystem::render(Frame &frame, vk::Extent2D extent,
                       vk::SubpassContents::eInline);
   cmd.setViewport(0, viewport);
   cmd.setScissor(0, scissor);
-  _material->render(frame, cmd, meshUniforms, model.vertexBuffer().vkBuffer(),
+  for (auto [material, uniforms, model] : objects) {
+    material.render(frame, cmd, uniforms, model.vertexBuffer().vkBuffer(),
                     model.indexBuffer().vkBuffer(), model.indexCount());
+  }
   cmd.setViewport(0, viewport);
   cmd.setScissor(0, scissor);
   cmd.endRenderPass();

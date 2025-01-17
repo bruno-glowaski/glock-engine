@@ -30,9 +30,10 @@ struct RenderSystem {
 
   inline vk::RenderPass vkRenderPass() const { return _vkRenderPass.get(); }
 
-  void setMaterial(const Material &material);
   void render(Frame &frame, vk::Extent2D viewport,
-              const MeshUniforms &meshUniforms, const Model &model);
+              std::initializer_list<
+                  std::tuple<Material &, const MeshUniforms &, const Model &>>
+                  objects);
 
 private:
   vk::Queue _graphicsQueue;

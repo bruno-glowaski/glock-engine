@@ -7,6 +7,7 @@ add_executable(engine
   "${CMAKE_CURRENT_SOURCE_DIR}/textures.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/materials/utils.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/materials/colorful.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/materials/procedural.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/materials/simple.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
 )

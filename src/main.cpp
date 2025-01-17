@@ -1,3 +1,5 @@
+#include "material.hpp"
+#include "materials/procedural.hpp"
 #include <array>
 #include <chrono>
 #include <cstdlib>
@@ -18,6 +20,7 @@
 #include "buffer_impl.hpp"
 #include "graphics_device.hpp"
 #include "materials/colorful.hpp"
+#include "materials/procedural.hpp"
 #include "model.hpp"
 #include "model_impl.hpp"
 #include "render_system.hpp"
@@ -32,7 +35,7 @@ using FFrameDuration = std::chrono::duration<float>;
 const uint64_t MAX_FPS = 60;
 const FrameDuration MIN_FRAME_DURATION =
     std::chrono::duration_cast<FrameDuration>(Second{1}) / MAX_FPS;
-const auto kVertices =
+const auto kModelVertices =
     std::to_array<ColorfulMaterial::Vertex>({{1.0, 1.0, -1.0},
                                              {1.0, -1.0, -1.0},
                                              {1.0, 1.0, 1.0},
@@ -41,9 +44,21 @@ const auto kVertices =
                                              {-1.0, -1.0, -1.0},
                                              {-1.0, 1.0, 1.0},
                                              {-1.0, -1.0, 1.0}});
-const auto kIndices = std::to_array<uint16_t>(
+const auto kModelIndices = std::to_array<uint16_t>(
     {4, 2, 0, 2, 7, 3, 6, 5, 7, 1, 7, 5, 0, 3, 1, 4, 1, 5,
      4, 6, 2, 2, 6, 7, 6, 4, 5, 1, 3, 7, 0, 2, 3, 4, 0, 1});
+const auto kSkyBoxVertices =
+    std::to_array<ProceduralMaterial::Vertex>({{100.0, 100.0, -100.0},
+                                               {100.0, -100.0, -100.0},
+                                               {100.0, 100.0, 100.0},
+                                               {100.0, -100.0, 100.0},
+                                               {-100.0, 100.0, -100.0},
+                                               {-100.0, -100.0, -100.0},
+                                               {-100.0, 100.0, 100.0},
+                                               {-100.0, -100.0, 100.0}});
+const auto kSkyBoxIndices = std::to_array<uint16_t>(
+    {0, 4, 2, 3, 2, 7, 7, 6, 5, 5, 1, 7, 1, 0, 3, 5, 4, 1,
+     2, 4, 6, 7, 2, 6, 5, 6, 4, 7, 1, 3, 3, 0, 2, 1, 4, 0});
 
 template <std::invocable<FrameDuration> TTick>
 inline void runGameLoop(const Window &window, TTick tick) {
@@ -82,8 +97,13 @@ int main(void) {
 
   // Load model
   auto material = ColorfulMaterial::create(device, renderSystem);
-  renderSystem.setMaterial(material);
-  auto model = Model::fromRanges(device, kVertices, kIndices);
+  auto model = Model::fromRanges(device, kModelVertices, kModelIndices);
+
+  // Load skybox
+  auto skyBoxMaterial = ProceduralMaterial::create(
+      device, renderSystem, "./assets/shaders/vaporwave_skybox.vert.spv",
+      "./assets/shaders/vaporwave_skybox.frag.spv");
+  auto skyBox = Model::fromRanges(device, kSkyBoxVertices, kSkyBoxIndices);
 
   runGameLoop(window, [&](FrameDuration totalTime) {
     material.setTime(totalTime);
@@ -102,7 +122,8 @@ int main(void) {
                     glm::vec3{0.0, 1.0, 0.0});
     auto projMat = glm::perspective(fov, aspectRatio, 0.1f, 100.0f);
     projMat[1][1] *= -1;
-    auto mvp = projMat * viewMat * modelMat;
+    auto modelMvp = projMat * viewMat * modelMat;
+    auto skyBoxMvp = projMat * viewMat;
 
     if (swapchain.needsRecreation()) {
       window.waitForValidDimensions();
@@ -112,14 +133,21 @@ int main(void) {
           RenderSystem::create(device, swapchain, std::move(renderSystem));
       material =
           ColorfulMaterial::create(device, renderSystem, std::move(material));
-      renderSystem.setMaterial(material);
+      skyBoxMaterial = ProceduralMaterial::create(
+          device, renderSystem, "./assets/shaders/vaporwave_skybox.vert.spv",
+          "./assets/shaders/vaporwave_skybox.frag.spv",
+          std::move(skyBoxMaterial));
     }
 
     auto frame = swapchain.nextImage();
     if (!frame.has_value()) {
       return;
     }
-    renderSystem.render(*frame, viewport, {mvp}, model);
+    renderSystem.render(*frame, viewport,
+                        {
+                            {material, {modelMvp}, model},
+                            {skyBoxMaterial, {skyBoxMvp}, skyBox},
+                        });
     swapchain.present(*frame);
   });
   device.waitIdle();
